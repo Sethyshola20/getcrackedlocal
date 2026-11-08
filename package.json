@@ -1,0 +1,19 @@
+{
+  "name": "understack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A personal systems-engineering learning workspace",
+  "scripts": {
+    "setup": "npm install && npm --prefix web install && go mod download",
+    "dev": "node scripts/dev.mjs",
+    "setup:runtimes": "docker pull golang:1.24-bookworm && docker pull rust:1.85-bookworm && docker pull gcc:14-bookworm",
+    "build": "npm --prefix web run build && go build -o bin/understack ./cmd/server",
+    "start": "go run ./cmd/server",
+    "test": "npm run test:web && go test ./internal/... ./cmd/...",
+    "format": "prettier --write web/src web/tests web/vite.config.ts web/tsconfig.json package.json README.md && gofmt -w cmd internal",
+    "test:web": "npm --prefix web test"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

@@ -1,0 +1,314 @@
+{
+  "id": "networking",
+  "topic": "networking",
+  "title": "Networking: from packets to resilient protocols",
+  "description": "Build a layered model of addressing, transport, flow control, secure connections, and application semantics under delay and loss.",
+  "lessons": [
+    {
+      "id": "lesson-networking-layered-request",
+      "moduleId": "networking-1",
+      "kind": "concept",
+      "title": "Trace one request through the stack",
+      "summary": "Separate application, transport, network, and link responsibilities",
+      "objectives": [
+        "Separate application, transport, network, and link responsibilities.",
+        "Identify which addresses change along a routed path."
+      ],
+      "body": "## Core idea\n\nAn application exchanges logical messages over a transport. IP routes packets between network addresses; a link carries frames to a local next hop. DNS resolves a name according to its own caching and authority rules. Routers forward at a different scope from switches. Encapsulation adds headers and does not guarantee each layer sees the same unit of work as the layer above.\n\n## Worked example\n\nA remote server IP is usually reached through a local gateway. The first Ethernet frame targets the gateway’s link address, while the IP destination remains the remote server unless a middlebox rewrites it.\n\n## Try it\n\nDraw a request from laptop to server through two routers. Label names, IP addresses, ports, and per-link addresses. Identify where routing and name resolution occur.\n\n## Check your work\n\nThe diagram does not confuse a default gateway with the final application peer. It accounts for local neighbor resolution and states whether address translation is assumed.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-cidr-hosts",
+        "networking-tcp-handshake"
+      ]
+    },
+    {
+      "id": "lesson-networking-udp-ip",
+      "moduleId": "networking-1",
+      "kind": "concept",
+      "title": "IP, UDP, and the limits of datagrams",
+      "summary": "Choose a transport using delivery and ordering requirements",
+      "objectives": [
+        "Choose a transport using delivery and ordering requirements.",
+        "Account for path MTU and application message size."
+      ],
+      "body": "## Core idea\n\nIP forwarding provides best-effort delivery. UDP preserves datagram boundaries but does not itself ensure delivery, ordering, duplicate suppression, or congestion control for an application. Large datagrams can encounter path-MTU limits and fragmentation behavior that varies by IP version and configuration. Applications need explicit size, loss, and overload policies instead of treating UDP as a faster reliable message service.\n\n## Worked example\n\nA receiver that gets updates 10, 12, and 11 must decide whether to buffer, reorder, discard stale data, or request recovery. The correct choice depends on whether updates replace state or depend on every preceding event.\n\n## Try it\n\nSpecify a small synthetic telemetry protocol with sequence numbers and maximum datagram size. Explain its behavior on loss, duplication, reordering, and a receiver too slow to consume.\n\n## Check your work\n\nThe protocol states what information may be lost and bounds buffering. It includes a congestion-aware sending policy and avoids assuming every datagram that leaves the sender arrives.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-udp-contract",
+        "networking-mtu-payload",
+        "networking-pmtu-blackhole"
+      ]
+    },
+    {
+      "id": "lesson-networking-framing-parser",
+      "moduleId": "networking-1",
+      "kind": "concept",
+      "title": "Frame a byte stream safely",
+      "summary": "Parse messages across arbitrary read boundaries",
+      "objectives": [
+        "Parse messages across arbitrary read boundaries.",
+        "Reject untrusted lengths before allocating large buffers."
+      ],
+      "body": "## Core idea\n\nA TCP connection is a byte stream, so the application must define its own messages. A length-prefixed protocol needs a byte order, header size, maximum length, and parser state. A read can contain part of a header or multiple frames. A write can be partial. Keep parser memory bounded and define what happens if the peer disconnects mid-frame.\n\n## Worked example\n\nA four-byte length header may arrive as one byte followed by three. A later read may contain two complete payloads and the next header. Maintain a cursor and consume only bytes belonging to complete frames.\n\n## Try it\n\nWrite parser pseudocode for a 32-bit big-endian length prefix with a 64 KiB payload limit. Test every possible split point of a short two-message stream.\n\n## Check your work\n\nAll splits yield identical messages. Oversized lengths are rejected before payload allocation, incomplete EOF is distinguishable from clean completion, and unread bytes are retained correctly.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-half-close",
+        "networking-seq-bytes"
+      ]
+    },
+    {
+      "id": "lesson-networking-stream",
+      "title": "One send is not one message",
+      "summary": "TCP · Framing",
+      "body": "## The problem to understand\n\nA client calls send twice, each time with a 100-byte application message. The server calls recv with a 1,000-byte buffer. Which result is guaranteed by TCP, assuming a healthy connection and successful delivery?\n\n## The mental model\n\nTCP provides an ordered byte stream, not application message boundaries. The receiver may obtain part of a message, one message, or bytes from multiple messages in a read. The application must encode boundaries, for example using a length prefix and a bounded incremental parser.\n\nA send call may itself accept fewer bytes than requested, especially in nonblocking use. Likewise, readability does not imply a complete frame is available. The receiver must preserve partial input, validate advertised lengths before allocation, and distinguish clean EOF at a frame boundary from truncation in the middle of a frame.\n\n## Check your understanding\n\n- Recognize ordered bytes rather than preserved send boundaries.\n- Require explicit message framing and partial-read handling.\n- Consider length validation and EOF within a frame.\n\n## Think one step further\n\nHow would your framing parser defend against a peer announcing a 4 GiB frame?\n\n## Primary reading\n\n- [IETF · TCP specification (RFC 9293)](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 4,
+      "questionIds": [
+        "networking-stream"
+      ],
+      "moduleId": "networking-1",
+      "kind": "workshop",
+      "objectives": [
+        "Recognize ordered bytes rather than preserved send boundaries.",
+        "Require explicit message framing and partial-read handling."
+      ]
+    },
+    {
+      "id": "lesson-networking-congestion-windows",
+      "moduleId": "networking-2",
+      "kind": "concept",
+      "title": "Flow control and congestion control solve different problems",
+      "summary": "Distinguish receiver capacity from network capacity",
+      "objectives": [
+        "Distinguish receiver capacity from network capacity.",
+        "Calculate a bandwidth-delay product with consistent units."
+      ],
+      "body": "## Core idea\n\nFlow control prevents a sender from overrunning receiver capacity. Congestion control limits pressure on the network path. Throughput depends on available windows, round-trip time, loss, and application behavior, not just link bandwidth. The bandwidth-delay product estimates in-flight data needed to fill a path under simplified steady-state assumptions; it is not a mandate to queue that much data at every router.\n\n## Worked example\n\nAt 100 Mbit/s and a 40 ms round trip, the product is 4 Mbit, or about 500,000 bytes. A much smaller effective in-flight limit can constrain throughput even when the link is otherwise idle.\n\n## Try it\n\nCalculate the product for two synthetic paths. Describe how a slow reader and a congested router produce different signals and repair options.\n\n## Check your work\n\nThe arithmetic converts bits to bytes and uses round-trip time consistently. Explain why raising a buffer limit cannot remove a slower receiver or guarantee low queueing latency.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-flow-congestion",
+        "networking-little-law"
+      ]
+    },
+    {
+      "id": "lesson-networking-retry-protocol",
+      "moduleId": "networking-2",
+      "kind": "concept",
+      "title": "Timeouts require application-level recovery",
+      "summary": "Distinguish transport failure from operation outcome",
+      "objectives": [
+        "Distinguish transport failure from operation outcome.",
+        "Design idempotency boundaries and retry budgets."
+      ],
+      "body": "## Core idea\n\nA timeout reports that a caller did not obtain a result in time. The peer may have executed the operation and lost only the response. Retry safety therefore depends on application semantics. Stable request identifiers, atomic deduplication with effects, and a documented retention window can make retries safe within a defined boundary. Exponential backoff and jitter reduce synchronized retry pressure but do not create idempotency.\n\n## Worked example\n\nA client submits request A, the server commits it, and the response is lost. Retrying as a fresh request B may repeat the effect. Retrying A can return the recorded result if effect and identifier were stored atomically.\n\n## Try it\n\nWrite a retry contract for a synthetic job API. Include a deadline, maximum attempts, request ID ownership, deduplication retention, and an outcome-unknown response.\n\n## Check your work\n\nThe design handles the lost-response case without claiming the original operation failed. It defines what happens after deduplication history expires and caps total retry work.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-http-idempotency",
+        "networking-retry-amplification",
+        "networking-keepalive-deadline"
+      ]
+    },
+    {
+      "id": "lesson-networking-bdp",
+      "title": "How much data must be in flight?",
+      "summary": "Bandwidth-delay product · Flow control",
+      "body": "## The problem to understand\n\nA path has a bottleneck rate of 1 Gbit/s and a round-trip time of 40 ms. Ignoring headers and losses, what minimum amount of unacknowledged data in **decimal megabytes** is needed to fill the path continuously? Use MB = 1,000,000 bytes. This is a bandwidth-delay product calculation, not a claim that TCP immediately reaches that window.\n\n## The mental model\n\nThe bandwidth-delay product is `1,000,000,000 bits/s × 0.040 s = 40,000,000 bits`, or 5,000,000 bytes = 5 decimal MB. A sender needs enough effective congestion window and receiver window to permit roughly that amount in flight to sustain the idealized bottleneck rate.\n\nThe smaller effective window constrains throughput. Startup behavior, losses, pacing, socket buffering, and application production can reduce achieved throughput further. Larger buffers alone do not create network capacity and may increase queueing delay.\n\n## Check your understanding\n\n- Multiply rate by round-trip time.\n- Convert bits into bytes and use decimal MB.\n- Distinguish ideal in-flight requirements from actual congestion-control behavior.\n\n## Think one step further\n\nWhat happens to the required window when the bottleneck rate doubles while RTT stays constant?\n\n## Primary reading\n\n- [IETF · TCP specification (RFC 9293)](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 4,
+      "questionIds": [
+        "networking-bdp"
+      ],
+      "moduleId": "networking-2",
+      "kind": "workshop",
+      "objectives": [
+        "Multiply rate by round-trip time.",
+        "Convert bits into bytes and use decimal MB."
+      ]
+    },
+    {
+      "id": "lesson-networking-timeout",
+      "title": "Timeout does not mean not executed",
+      "summary": "Retries · Idempotency",
+      "body": "## The problem to understand\n\nA client sends a request to create an order. The server commits it, but the response is lost before reaching the client. The client times out. Design retry semantics that do not create a duplicate order. Include request identity, concurrent retries, storage atomicity, result replay, and retention policy.\n\n## The mental model\n\nA timeout means the client lacks a response, not that the server did nothing. Assign a stable idempotency key to one logical operation and reuse it on retries. Atomically persist a unique key, a canonical request fingerprint, the business effect, and a replayable result within the same transaction or another explicitly proven protocol.\n\nConcurrent retries must converge on one committed operation. Reusing a key with different parameters should be rejected. A retry after commit returns the stored result. If downstream side effects cross a transaction boundary, propagate the identity or use an outbox with idempotent consumers. Key retention defines the period of duplicate protection; expiring it too early reopens the risk. Backoff and jitter reduce retry storms but do not provide idempotency.\n\n## Check your understanding\n\n- Distinguish client uncertainty from server non-execution.\n- Persist identity and business effect atomically with concurrency control.\n- Replay results and reject conflicting payloads for one key.\n- Define retention and cross-service side-effect behavior.\n\n## Think one step further\n\nWhat response should a retry receive while the original operation is still in progress?\n\n## Primary reading\n\n- [IETF · TCP specification (RFC 9293)](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 5,
+      "questionIds": [
+        "networking-timeout"
+      ],
+      "moduleId": "networking-2",
+      "kind": "workshop",
+      "objectives": [
+        "Distinguish client uncertainty from server non-execution.",
+        "Persist identity and business effect atomically with concurrency control."
+      ]
+    },
+    {
+      "id": "lesson-networking-bounded-buffers",
+      "moduleId": "networking-3",
+      "kind": "concept",
+      "title": "Backpressure must cross every queue",
+      "summary": "Trace pressure through application and kernel buffers",
+      "objectives": [
+        "Trace pressure through application and kernel buffers.",
+        "Define a slow-reader policy for a server."
+      ],
+      "body": "## Core idea\n\nBackpressure works when downstream inability to consume eventually limits upstream production. An unbounded queue at any stage breaks that chain by storing the pressure as memory. A send completing into a kernel buffer does not prove the remote application consumed the bytes. Bound pending output per connection and globally, and decide whether to pause input, reject work, drop replaceable data, or disconnect.\n\n## Worked example\n\nA server emits 1 MiB/s to a client consuming 100 KiB/s. Backlog grows by roughly 924 KiB/s under those assumptions. More output buffer buys time but cannot make the rates match.\n\n## Try it\n\nDraw all queues in a request-to-streaming-response path. Add a byte budget and high-water behavior to each stage, including the work queue before serialization.\n\n## Check your work\n\nA slow client cannot allocate unbounded pending responses. Pausing one connection does not accidentally block unrelated healthy clients, and metrics show both queued bytes and rejection behavior.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-accept-backlog",
+        "networking-fair-queue"
+      ]
+    },
+    {
+      "id": "lesson-networking-tls-identity",
+      "moduleId": "networking-3",
+      "kind": "concept",
+      "title": "TLS protects a channel with an identity contract",
+      "summary": "Separate encryption from peer authentication",
+      "objectives": [
+        "Separate encryption from peer authentication.",
+        "Explain certificate validation and application authorization boundaries."
+      ],
+      "body": "## Core idea\n\nTLS provides authenticated encryption under its protocol and trust assumptions. A client still needs to validate the expected server identity and trust chain. Encrypting a connection to an unverified peer does not establish who is on the other end. Application authorization remains necessary after the channel is established. Connection setup, resumption, and early data have distinct replay and performance properties.\n\n## Worked example\n\nA successful handshake to a certificate for a different hostname does not satisfy a client intending to reach api.example. Disabling verification to repair a local test removes the identity check rather than fixing the certificate configuration.\n\n## Try it\n\nDraw the trust decisions for a client connecting to a service name. Include DNS, certificate validation, hostname matching, and an application-level credential check.\n\n## Check your work\n\nEach check states what it proves. Describe why a TLS-protected retried mutation can still need an idempotency key and why application correctness cannot be delegated to encryption.\n\n## Primary reading\n\n- [TLS 1.3, RFC 8446](https://www.rfc-editor.org/rfc/rfc8446.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-tls-identity"
+      ]
+    },
+    {
+      "id": "lesson-networking-nagle",
+      "title": "The tiny write with a large delay",
+      "summary": "Nagle · Delayed ACK · TCP_NODELAY",
+      "body": "## The problem to understand\n\nA request is emitted in two small writes. Sometimes the first segment is sent while the second is held until an acknowledgment, and the receiver waits for more request bytes before responding. Explain how Nagle’s algorithm and delayed acknowledgments can interact. Give two application-level remedies and describe why blindly enabling TCP_NODELAY everywhere is not a full performance strategy.\n\n## The mental model\n\nNagle’s algorithm can hold a small write while earlier data remains unacknowledged. A receiver using delayed ACKs may wait briefly for additional data before acknowledging. If an application needs the second write to form a complete request, the two policies can introduce an avoidable delay. Exact timers and interactions vary by stack and connection state.\n\nPrefer composing a complete small request into one write or vectored write, while still handling partial sends. Where the protocol genuinely needs prompt independent small writes, evaluate TCP_NODELAY. Packet capture and timestamps should confirm the mechanism. Disabling Nagle can increase packet rate and CPU/network overhead; it does not fix slow receivers, application buffering, congestion, or scheduling. Treat packetization and latency as workload-specific choices.\n\n## Check your understanding\n\n- Explain the unacknowledged-small-write condition and delayed ACK interaction.\n- Offer request coalescing/vectored writes and targeted TCP_NODELAY.\n- Validate with packet evidence and discuss packet-rate tradeoffs.\n\n## Think one step further\n\nHow can a TLS buffering layer reintroduce latency even after TCP_NODELAY is enabled?\n\n## Primary reading\n\n- [IETF · TCP specification (RFC 9293)](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 5,
+      "questionIds": [
+        "networking-nagle"
+      ],
+      "moduleId": "networking-3",
+      "kind": "workshop",
+      "objectives": [
+        "Explain the unacknowledged-small-write condition and delayed ACK interaction.",
+        "Offer request coalescing/vectored writes and targeted TCP_NODELAY."
+      ]
+    },
+    {
+      "id": "lesson-networking-backpressure",
+      "title": "The queue moved; the bottleneck did not",
+      "summary": "Flow control · Backpressure",
+      "body": "## The problem to understand\n\nA downstream service can sustain 500 requests/s. An upstream service receives 2,000 requests/s indefinitely and buffers requests in memory. Which statements are correct? Select all that apply.\n\n## The mental model\n\nWith sustained arrival above service capacity, the backlog grows without bound unless the system rejects, sheds, slows, or otherwise reduces admitted work. Adding a larger queue delays visible failure but does not increase the downstream service rate. Bounded admission and deadline-aware cancellation keep resource use explicit.\n\nTCP flow control can eventually slow a byte sender, but it does not automatically provide end-to-end application admission control across multiple queues, asynchronous producers, or fanout. Retries can amplify offered load unless budgeted. A durable queue changes where backlog lives and its failure semantics; it does not remove the mismatch between arrival and service rates.\n\n## Check your understanding\n\n- Recognize sustained positive backlog growth.\n- Use bounded admission or load reduction rather than an arbitrarily large queue.\n- Separate transport flow control from end-to-end work admission.\n\n## Think one step further\n\nHow would a per-request deadline change which queued work you should process next?\n\n## Primary reading\n\n- [IETF · TCP specification (RFC 9293)](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 4,
+      "questionIds": [
+        "networking-backpressure"
+      ],
+      "moduleId": "networking-3",
+      "kind": "workshop",
+      "objectives": [
+        "Recognize sustained positive backlog growth.",
+        "Use bounded admission or load reduction rather than an arbitrarily large queue."
+      ]
+    },
+    {
+      "id": "lesson-networking-dns-connection-pools",
+      "moduleId": "networking-4",
+      "kind": "concept",
+      "title": "Names, caching, and connection lifetimes",
+      "summary": "Distinguish DNS freshness from established connection routing",
+      "objectives": [
+        "Distinguish DNS freshness from established connection routing.",
+        "Budget connection pools and reuse explicitly."
+      ],
+      "body": "## Core idea\n\nDNS caching and connection reuse operate on different lifetimes. Resolving a service again can produce a new address while existing connections continue to an earlier endpoint. Connection pools reduce setup cost but need limits, idle policies, and failure handling. Load balancing behavior depends on where selection occurs: per request, connection, or resolved endpoint.\n\n## Worked example\n\nA client opens one long-lived connection to one server and sends all requests over it. Adding more server addresses to DNS does not automatically redistribute that established connection across the new servers.\n\n## Try it\n\nDesign a pool for a service whose endpoints rotate. Specify maximum connections, idle expiry, name refresh, unhealthy connection handling, and behavior while no endpoint is available.\n\n## Check your work\n\nThe design avoids unbounded connection creation during failure. It distinguishes a stale DNS answer from a healthy existing connection and measures endpoint distribution rather than assuming it.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 15,
+      "questionIds": [
+        "networking-dns-ttl",
+        "networking-port-exhaustion",
+        "networking-nat-idle",
+        "networking-load-balancer-state",
+        "networking-anycast-state"
+      ]
+    },
+    {
+      "id": "lesson-networking-packet-diagnosis",
+      "moduleId": "networking-4",
+      "kind": "workshop",
+      "title": "Read a packet trace as a timeline",
+      "summary": "Separate retransmission evidence from application delay",
+      "objectives": [
+        "Separate retransmission evidence from application delay.",
+        "Use bounded fault injection to test a network hypothesis."
+      ],
+      "body": "## Core idea\n\nA packet trace records observations at one capture point, with its own timestamp and offload limitations. Retransmissions, acknowledgements, connection setup, and idle intervals help localize delay, but not every application stall is visible as a transport fault. Correlate request identifiers and application timestamps with network events. A capture at one host cannot directly reveal every router queue.\n\n## Worked example\n\nA long pause before the first response byte could be server computation, queueing, or a delayed packet. If the request is acknowledged promptly but the application begins work late, transport retransmission is a weaker explanation.\n\n## Try it\n\nPlan a local experiment adding delay, packet loss, and a slow reader separately. For each, predict changes in packet timing, application latency, and queue depth.\n\n## Check your work\n\nThe findings tie each conclusion to a capture location and workload. They distinguish measured retransmission from inferred loss and avoid exposing credentials in captured traffic.\n\n## Primary reading\n\n- [TCP specification, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)",
+      "minutes": 25,
+      "questionIds": [
+        "networking-packet-capture",
+        "networking-network-slo"
+      ]
+    },
+    {
+      "id": "lesson-networking-quic",
+      "title": "Which head-of-line blocking disappeared?",
+      "summary": "QUIC · HTTP/3 · Loss recovery",
+      "body": "## The problem to understand\n\nCompare HTTP/2 over one TCP connection with HTTP/3 over QUIC when one packet is lost. Explain the head-of-line blocking that QUIC streams can avoid, the ordering that remains within each stream, and why connection-level congestion control and shared bottlenecks still couple streams. Address a request that depends on missing QPACK state.\n\n## The mental model\n\nTCP exposes one ordered byte stream. A missing segment prevents later bytes from being delivered to the HTTP/2 layer even if those bytes carry another logical stream. QUIC tracks stream data independently, so missing bytes on one stream do not inherently prevent delivery of complete data on another. Each individual reliable QUIC stream still delivers its bytes in order.\n\nQUIC packets can contain frames from several streams, so one loss may affect several streams directly. They also share connection-level congestion control, flow-control limits, CPU, and the network bottleneck. Application dependencies can introduce their own blocking: a header block referencing unavailable QPACK dynamic-table state may be blocked even when its stream bytes have arrived. QUIC removes a transport ordering dependency, not all queueing or cross-stream dependence.\n\n## Check your understanding\n\n- Identify TCP’s connection-wide ordered delivery constraint.\n- Explain independent QUIC stream delivery and remaining per-stream ordering.\n- Account for shared congestion/resources and packets carrying multiple streams.\n- Recognize QPACK/application-level dependency blocking.\n\n## Think one step further\n\nWould putting every request on its own TCP connection remove all tail-latency coupling?\n\n## Primary reading\n\n- [IETF · QUIC transport (RFC 9000)](https://www.rfc-editor.org/rfc/rfc9000.html)",
+      "minutes": 7,
+      "questionIds": [
+        "networking-quic",
+        "networking-http2-loss"
+      ],
+      "moduleId": "networking-4",
+      "kind": "workshop",
+      "objectives": [
+        "Identify TCP’s connection-wide ordered delivery constraint.",
+        "Explain independent QUIC stream delivery and remaining per-stream ordering."
+      ]
+    },
+    {
+      "id": "lesson-networking-protocol-capstone",
+      "moduleId": "networking-4",
+      "kind": "capstone",
+      "title": "Capstone: a resilient framed job protocol",
+      "summary": "Combine framing, bounded queues, identity, and retry semantics",
+      "objectives": [
+        "Combine framing, bounded queues, identity, and retry semantics.",
+        "Demonstrate behavior under partial failure."
+      ],
+      "body": "## Core idea\n\nDesign or implement a client and server for bounded job submission and result retrieval. Use explicit framing, maximum message sizes, stable request IDs, deadlines, and bounded output. Define authentication assumptions and whether work continues after a connection closes. Compare the transport requirements of TCP and QUIC without assuming either eliminates application-level ordering needs.\n\n## Worked example\n\nSubmit a job, lose its response, reconnect, and retry with the same identifier. Then stall the result reader while other clients submit. Correctness requires deduplication and resource isolation, not merely successful delivery on a healthy connection.\n\n## Try it\n\nDeliver a wire-format note, state machines, parser tests, and fault cases for split reads, disconnects, duplicated requests, full queues, and endpoint rotation. Report throughput and latency under a stated synthetic load.\n\n## Check your work\n\nReview bounded memory, unambiguous ownership of accepted jobs, recoverable uncertain outcomes, and traceable errors. Identify the guarantee each layer supplies and the guarantees your application must supply itself.\n\n## Primary reading\n\n- [TCP, RFC 9293](https://www.rfc-editor.org/rfc/rfc9293.html)\n- [QUIC, RFC 9000](https://www.rfc-editor.org/rfc/rfc9000.html)",
+      "minutes": 60,
+      "questionIds": [
+        "networking-stream-resume"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Understand bytes, queues, and basic client/server programs.",
+    "Use simple arithmetic with bandwidth and time units."
+  ],
+  "outcomes": [
+    "Trace a request through link, IP, transport, and application layers.",
+    "Design bounded framing and flow control for stream protocols.",
+    "Reason about timeout ambiguity, retries, and authenticated connections.",
+    "Evaluate a client/server protocol under loss, slow readers, and overload."
+  ],
+  "modules": [
+    {
+      "id": "networking-1",
+      "title": "Layers and message boundaries",
+      "description": "Establish addressing, routing, transport, and framing.",
+      "level": "Foundation"
+    },
+    {
+      "id": "networking-2",
+      "title": "Capacity and uncertainty",
+      "description": "Relate in-flight bytes to latency and retry semantics.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "networking-3",
+      "title": "Flow control and security",
+      "description": "Bound queues and understand authenticated encryption.",
+      "level": "Advanced"
+    },
+    {
+      "id": "networking-4",
+      "title": "Diagnosis and protocol design",
+      "description": "Use traces and fault injection to build a resilient protocol.",
+      "level": "Expert"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "id": "systems",
+    "name": "Under the abstraction",
+    "description": "Follow a line of code all the way down to the hardware.",
+    "icon": "cpu",
+    "topics": [
+      "os",
+      "architecture",
+      "networking"
+    ],
+    "color": "#d4d4d4"
+  },
+  {
+    "id": "latency",
+    "name": "Every microsecond matters",
+    "description": "Build the intuition behind predictable, low-latency systems.",
+    "icon": "zap",
+    "topics": [
+      "cpp",
+      "rust",
+      "hft"
+    ],
+    "color": "#d4d4d4"
+  },
+  {
+    "id": "ai",
+    "name": "From attention to production",
+    "description": "Understand the model. Then learn how to serve it well.",
+    "icon": "sparkles",
+    "topics": [
+      "llms",
+      "inference",
+      "kubernetes"
+    ],
+    "color": "#d4d4d4"
+  },
+  {
+    "id": "reliability",
+    "name": "Design for partial failure",
+    "description": "Reason about state, coordination, and systems that recover.",
+    "icon": "network",
+    "topics": [
+      "go",
+      "distributed",
+      "databases"
+    ],
+    "color": "#d4d4d4"
+  }
+]

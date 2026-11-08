@@ -1,0 +1,950 @@
+[
+  {
+    "id": "kubernetes-probes",
+    "topic": "kubernetes",
+    "title": "Healthy enough to live, not ready to serve",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Probes",
+      "Availability"
+    ],
+    "prompt": "An application is alive and recovering a local cache. It must temporarily receive no normal Service traffic, but restarting it would reset recovery. Which probe should report failure during that period, assuming the Pod is otherwise running?",
+    "solution": "Readiness should fail while the application is unable to serve. Kubernetes uses Pod readiness when deciding whether it should receive normal Service traffic through ready endpoints. A liveness failure can trigger a container restart after its configured threshold, which may repeatedly erase recovery progress.\n\nA startup probe can give a slow-starting application time before liveness and readiness checks begin, but it is not a replacement for ongoing readiness. Readiness changes are not instantaneous global traffic barriers: endpoints and upstream components need time to observe them, and existing connections may remain.",
+    "rubric": [
+      "Use readiness to express temporary inability to serve.",
+      "Distinguish liveness restart semantics from traffic eligibility.",
+      "Recognize startup behavior and propagation delays."
+    ],
+    "hints": [
+      "One probe controls restart decisions; another controls service eligibility.",
+      "An application can be alive while it cannot yet serve safely."
+    ],
+    "followUp": "Should a brief database outage make every application container fail liveness?",
+    "references": [
+      {
+        "title": "Kubernetes · Pod lifecycle and probes",
+        "url": "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+      }
+    ],
+    "options": [
+      "Fail liveness so the cache is rebuilt repeatedly.",
+      "Fail readiness while recovery proceeds.",
+      "Delete the Deployment.",
+      "Mark the node NotReady from the application."
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "kubernetes-resources",
+    "topic": "kubernetes",
+    "title": "The node had free memory. The container died.",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 10,
+    "tags": [
+      "Requests",
+      "Limits",
+      "OOM"
+    ],
+    "prompt": "A container requests 256 MiB and has a 512 MiB memory limit. Its working set briefly reaches 650 MiB. The node still has several GiB free, yet the container is OOMKilled. Explain scheduling requests versus enforcement limits, distinguish this from node-pressure eviction, and propose a repair based on measurement rather than simply removing limits.",
+    "solution": "The scheduler primarily uses resource requests to place Pods. A container memory limit is an enforcement boundary, commonly through cgroups, so exceeding it can cause a cgroup OOM kill even when the node has free memory. The request is not a maximum and the limit is not a promise that the node will always have spare capacity.\n\nNode-pressure eviction is a different mechanism driven by node resource pressure and eviction policy. Inspect termination reason, events, usage over time, memory categories, and application allocation patterns. Account for caches, concurrency, native memory, and runtime headroom. Set requests and limits from observed steady and burst behavior, bound application memory where possible, and load-test the result. Removing limits can transfer the failure to the node or neighboring workloads.",
+    "rubric": [
+      "Separate scheduler requests from memory-limit enforcement.",
+      "Distinguish cgroup OOM from node-pressure eviction.",
+      "Measure burst memory and tune application/concurrency plus resource settings."
+    ],
+    "hints": [
+      "Free memory on the node does not override a cgroup’s configured boundary.",
+      "The scheduler makes a placement decision before the later memory burst."
+    ],
+    "followUp": "Why can a CPU limit cause latency spikes without terminating the container?",
+    "references": [
+      {
+        "title": "Kubernetes · resource management for Pods",
+        "url": "https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-shutdown",
+    "topic": "kubernetes",
+    "title": "SIGTERM is not the whole rollout",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Rollouts",
+      "Connection draining"
+    ],
+    "prompt": "Design graceful shutdown for an HTTP Pod during a rolling update. Requests can last 20 seconds and clients reuse keep-alive connections. Discuss readiness, endpoint propagation, preStop, SIGTERM handling, listener shutdown, in-flight requests, and terminationGracePeriodSeconds. Explain what happens when the budget expires.",
+    "solution": "Treat draining as a coordinated timeline. Stop advertising readiness and allow for endpoint/upstream propagation, while the application remains able to handle already routed traffic. A preStop hook may provide part of that coordination, but it consumes the same termination grace budget. Kubernetes sends the termination signal after the hook; the application must handle it deliberately.\n\nStop accepting new work in a protocol-aware way, close or drain reusable connections, and allow accepted requests to finish within a bounded shutdown deadline. Set the grace period to cover hook time, propagation allowance, and maximum intended drain time with margin. On expiry the container can be forcibly killed, so requests may still fail; clients need appropriate retry/idempotency semantics. Test with real ingress behavior and long requests rather than assuming readiness immediately closes every connection.",
+    "rubric": [
+      "Design an explicit readiness and propagation/draining timeline.",
+      "Include preStop time within the overall grace budget.",
+      "Handle reusable connections, listener shutdown, and bounded in-flight completion.",
+      "Explain forced termination and client-visible failure semantics."
+    ],
+    "hints": [
+      "Readiness does not instantly terminate existing connections.",
+      "The grace-period clock is already running during preStop."
+    ],
+    "followUp": "How does the shutdown strategy change for a consumer that has leased jobs from a queue?",
+    "references": [
+      {
+        "title": "Kubernetes · termination of Pods",
+        "url": "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-quorum",
+    "topic": "kubernetes",
+    "title": "How many failures can etcd tolerate?",
+    "difficulty": "Advanced",
+    "format": "numeric",
+    "minutes": 6,
+    "tags": [
+      "etcd",
+      "Quorum",
+      "Control plane"
+    ],
+    "prompt": "An etcd cluster uses a five-member voting Raft group. With no membership changes, what is the maximum number of voting members that can be unavailable while the remaining connected members can still form a majority and commit writes? Enter a whole number. Assume the surviving members can communicate.",
+    "solution": "A majority of five is three, so two members can be unavailable. The three surviving connected voters can still form a quorum. If only two remain, they cannot safely commit writes just because no other member responds.\n\nFailure tolerance is about connected voting majorities, not only powered-on machine counts. A network partition can prevent a quorum even when every process is alive. This also describes etcd write availability, not automatic termination of already running application Pods: Kubernetes data-plane workloads can often continue while control-plane changes are unavailable.",
+    "rubric": [
+      "Compute a majority of five as three.",
+      "Require connected voting members rather than merely live processes.",
+      "Separate control-plane writes from already running workload behavior."
+    ],
+    "hints": [
+      "A majority is strictly more than half.",
+      "Subtract the required voters from the total."
+    ],
+    "followUp": "Why does moving from five voters to six not increase the number of failures the cluster can tolerate?",
+    "references": [
+      {
+        "title": "etcd · failure modes",
+        "url": "https://etcd.io/docs/v3.5/op-guide/failures/"
+      }
+    ],
+    "expected": "2"
+  },
+  {
+    "id": "kubernetes-pending",
+    "topic": "kubernetes",
+    "title": "Capacity exists, but the Pod stays Pending",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Scheduling",
+      "Affinity",
+      "Volumes"
+    ],
+    "prompt": "A cluster dashboard shows 40% aggregate CPU utilization, yet a Pod requesting 8 CPUs stays Pending. List concrete reasons aggregate utilization is insufficient evidence of schedulability. Propose an ordered investigation covering per-node requests, affinity, taints, and persistent volumes. Explain why changing limits alone may have no effect.",
+    "solution": "The scheduler needs one eligible node with enough allocatable unreserved resources for the Pod, subject to placement constraints. Aggregate utilization says neither how capacity is fragmented nor how much is already reserved by other requests. Eight idle CPUs spread across several nodes do not necessarily fit one Pod. Limits generally do not replace scheduling requests.\n\nStart with the Pod’s scheduling events. Compare its complete requests, including relevant init-container/overhead rules, with per-node allocatable and reserved resources. Check node selectors and required affinity, topology spread, taints/tolerations, and node readiness. For stateful workloads, inspect PVC binding and volume topology/zone constraints. Repair the actual constraint, then evaluate whether autoscaling can create a compatible node. Do not remove placement or storage guarantees merely to make the status turn green.",
+    "rubric": [
+      "Distinguish utilization from requests, allocatable capacity, and fragmentation.",
+      "Use scheduling events and per-node fit before changing resource settings.",
+      "Investigate affinity, taints, node state, and volume topology.",
+      "Explain why changing only limits may not affect placement."
+    ],
+    "hints": [
+      "The scheduler places a Pod on a node, not on a cluster-wide average.",
+      "A storage volume can constrain which otherwise idle nodes are eligible."
+    ],
+    "followUp": "How can a PodDisruptionBudget affect a node drain even though it does not make a Pending Pod schedulable?",
+    "references": [
+      {
+        "title": "Kubernetes · concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-controller",
+    "topic": "kubernetes",
+    "title": "Reconcile the world after a crash",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 20,
+    "tags": [
+      "Controllers",
+      "Idempotency",
+      "Finalizers"
+    ],
+    "prompt": "Design a controller that provisions one external database for each custom resource. The controller may crash after the database is created but before status is updated. Events can be duplicated, and deletion may occur while provisioning is in progress. Explain the reconcile loop, stable external identity, idempotency, finalizers, status conditions, and retry/backoff behavior.",
+    "solution": "Reconcile desired state against observed state rather than treating each event as an instruction to execute exactly once. Derive or persist a stable external identity from the resource UID, and use external idempotency or lookup by that identity. After a crash, discover the existing database instead of creating another. A status write is not atomic with the external API call, so status alone cannot prove that creation did not occur.\n\nInstall a finalizer before creating external resources. During deletion, stop normal provisioning, locate and remove the external resource idempotently, then remove the finalizer after cleanup is confirmed. Report meaningful conditions and observed generation, use optimistic concurrency for API updates, and classify transient versus permanent failures. Bound retries with backoff and jitter and make ownership explicit. Define how an operator can recover from an unreachable external service without silently leaking resources.",
+    "rubric": [
+      "Reconcile observed state and survive create-before-status crashes.",
+      "Use resource-stable external identity and idempotent lookup/create.",
+      "Order finalizer installation, deletion cleanup, and finalizer removal.",
+      "Provide status conditions, concurrency handling, and bounded retries."
+    ],
+    "hints": [
+      "An event is a hint that state may need reconciliation, not a unique command.",
+      "What durable fact links an external database to this exact resource incarnation?"
+    ],
+    "followUp": "What if an operator deletes and recreates a resource with the same name but a different UID?",
+    "references": [
+      {
+        "title": "Kubernetes · controllers",
+        "url": "https://kubernetes.io/docs/concepts/architecture/controller/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-pod-unit",
+    "topic": "kubernetes",
+    "title": "A Pod shares a lifecycle boundary",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Pods",
+      "Networking"
+    ],
+    "prompt": "Explain why two containers in one Kubernetes Pod can communicate through localhost and why that does not mean their root filesystems are automatically shared.",
+    "solution": "Containers in a Pod share a network namespace, including the Pod IP and port space. Their container filesystems remain distinct unless storage is explicitly shared through volumes. Co-location should reflect a coupled lifecycle, not merely a desire to avoid configuring a Service.",
+    "hints": [
+      "Network and filesystem sharing are separate settings.",
+      "Shared ports can also conflict."
+    ],
+    "rubric": [
+      "Explain shared networking.",
+      "Require volumes for shared data.",
+      "Relate Pod composition to lifecycle."
+    ],
+    "followUp": "What happens if both containers try to bind the same port?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-service-selector",
+    "topic": "kubernetes",
+    "title": "A Service finds endpoints through labels",
+    "difficulty": "Foundation",
+    "format": "debug",
+    "minutes": 5,
+    "tags": [
+      "Services",
+      "Selectors"
+    ],
+    "prompt": "A Service exists but has no usable endpoints while Pods are Running. Give a focused check before blaming cluster networking.",
+    "solution": "Check that the Service selector matches Pod labels, that selected Pods are ready, and that targetPort resolves to the intended container port. Inspect EndpointSlices and readiness conditions. Running only describes a lifecycle phase; it does not establish selection, readiness, or successful application listening.",
+    "hints": [
+      "Discovery happens before packet forwarding.",
+      "Running is not the same as Ready."
+    ],
+    "rubric": [
+      "Check labels and selectors.",
+      "Inspect readiness and EndpointSlices.",
+      "Verify target port and application listener."
+    ],
+    "followUp": "How would a Service without a selector obtain endpoints?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-deployment-replicas",
+    "topic": "kubernetes",
+    "title": "Desired replicas are not current readiness",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Deployments",
+      "Availability"
+    ],
+    "prompt": "A Deployment desires 8 replicas. Status shows 8 total Pods but only 5 ready. How many additional Pods must become ready to meet the desired count, ignoring rollout surge?",
+    "solution": "3. Desired state and observed availability are different. The controller attempts reconciliation, but image errors, probes, scheduling, or application startup can prevent readiness; creating eight Pod objects does not satisfy the serving goal.",
+    "hints": [
+      "Subtract ready from desired.",
+      "Pod existence is not readiness."
+    ],
+    "rubric": [
+      "Compute three.",
+      "Separate desired and observed state.",
+      "Identify reasons readiness can lag."
+    ],
+    "followUp": "Which status fields help distinguish updated replicas from available replicas?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ],
+    "expected": "3"
+  },
+  {
+    "id": "kubernetes-config-secret",
+    "topic": "kubernetes",
+    "title": "Base64 is an encoding, not encryption",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Secrets",
+      "Configuration"
+    ],
+    "prompt": "What security property follows solely from storing a Kubernetes Secret value as base64 in its API representation?",
+    "solution": "None of encryption or access control follows from base64; it is reversible encoding. Secret protection also depends on authorization, encryption at rest, transport, workload access, and operational handling. Anyone able to read the decoded value can use it unless another control limits its authority.",
+    "hints": [
+      "Encoding is reversible without a key.",
+      "API access policy is a separate mechanism."
+    ],
+    "rubric": [
+      "Identify reversible encoding.",
+      "Reject encryption by base64.",
+      "Name independent protection mechanisms."
+    ],
+    "followUp": "Why should Secret values be excluded from routine diagnostic logs?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ],
+    "options": [
+      "Automatic end-to-end encryption",
+      "Irreversible hashing",
+      "Reversible text encoding only",
+      "Automatic least-privilege authorization"
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "kubernetes-namespace-scope",
+    "topic": "kubernetes",
+    "title": "A namespace is not a network firewall",
+    "difficulty": "Foundation",
+    "format": "multi_select",
+    "minutes": 5,
+    "tags": [
+      "Namespaces",
+      "Isolation"
+    ],
+    "prompt": "Which statements about Kubernetes namespaces are correct?",
+    "solution": "Namespaces scope many names and policies but are not an automatic network isolation boundary. Nodes and certain other resources are cluster-scoped. NetworkPolicy, authorization, quotas, and other controls must be configured explicitly to establish the intended isolation.",
+    "hints": [
+      "Resource scope and traffic policy differ.",
+      "Not every Kubernetes resource is namespaced."
+    ],
+    "rubric": [
+      "Identify name scoping.",
+      "Reject automatic traffic isolation.",
+      "Recognize cluster-scoped resources."
+    ],
+    "followUp": "How can ResourceQuota constrain a tenant without securing its network traffic?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ],
+    "options": [
+      "Many resource names are namespace-scoped",
+      "Different namespaces automatically block all traffic",
+      "Nodes are cluster-scoped",
+      "Namespaces eliminate the need for authorization"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "kubernetes-job-retry",
+    "topic": "kubernetes",
+    "title": "A retried Pod can repeat a side effect",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Jobs",
+      "Idempotency"
+    ],
+    "prompt": "Why should a Kubernetes Job's task be safe to repeat even when the user requested a single completion?",
+    "solution": "Pods can fail or be replaced, and execution may be retried after an ambiguous outcome. A remote side effect may have completed before failure was observed. Use stable work identities, atomic state transitions, and idempotent processing rather than assuming the controller provides exactly-once application effects.",
+    "hints": [
+      "Pod failure does not reveal remote transaction outcome.",
+      "The completion count is not a deduplication store."
+    ],
+    "rubric": [
+      "Explain retry ambiguity.",
+      "Use stable logical work identity.",
+      "Make side effects idempotent or transactional."
+    ],
+    "followUp": "Where would you persist deduplication state across replacement Pods?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-rollout-surge",
+    "topic": "kubernetes",
+    "title": "A rolling update needs temporary capacity",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Deployments",
+      "Rollouts"
+    ],
+    "prompt": "A Deployment has 10 replicas and maxSurge of 20%, with maxUnavailable set to zero. What is the maximum desired replica count during the rollout, excluding terminating Pods that may linger?",
+    "solution": "12: a surge of ceil(10×0.2)=2 adds to the base ten. The rollout needs capacity for extra Pods while preserving availability. Terminating Pods can temporarily consume additional resources, so this is not a universal bound on every process still present.",
+    "hints": [
+      "Percentage surge rounds up.",
+      "Add surge to the base count."
+    ],
+    "rubric": [
+      "Compute surge two.",
+      "Obtain twelve desired replicas.",
+      "Distinguish lingering termination resource use."
+    ],
+    "followUp": "What happens when the cluster lacks capacity for the surge Pods?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ],
+    "expected": "12"
+  },
+  {
+    "id": "kubernetes-pdb-boundary",
+    "topic": "kubernetes",
+    "title": "A disruption budget is not a survival guarantee",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Disruption budgets",
+      "Availability"
+    ],
+    "prompt": "Explain what a PodDisruptionBudget can constrain and why it does not guarantee availability during node failure or all workload updates.",
+    "solution": "A PDB limits supported voluntary disruptions through the eviction mechanism according to observed availability. It cannot prevent involuntary failures and does not replace a workload controller's rollout policy. Topology, readiness accuracy, application quorum, and resource capacity still determine whether service survives disruption.",
+    "hints": [
+      "Identify who uses the eviction API.",
+      "Node failure does not request permission."
+    ],
+    "rubric": [
+      "Define voluntary-eviction scope.",
+      "Exclude failure guarantees.",
+      "Coordinate rollout and application availability."
+    ],
+    "followUp": "Why can an overly strict PDB block a planned node drain?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-hpa-delay",
+    "topic": "kubernetes",
+    "title": "Scaling acts on delayed observations",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Autoscaling",
+      "Metrics"
+    ],
+    "prompt": "An HPA scales a deployment using average CPU utilization. Explain why it may respond poorly to sudden queued work and a dependency bottleneck.",
+    "solution": "Metrics and reconciliation are delayed, CPU averages can hide queue growth, and new Pods take time to schedule and become ready. A blocked dependency may produce low CPU despite high latency. Choose metrics tied to bottleneck and demand, keep admission bounded, and account for startup and stabilization behavior.",
+    "hints": [
+      "Low CPU can mean waiting.",
+      "Added replicas are not instantly useful capacity."
+    ],
+    "rubric": [
+      "Explain metric and startup delay.",
+      "Identify misleading CPU averages.",
+      "Match scaling signals to demand and capacity."
+    ],
+    "followUp": "When would queue age be more informative than queue length?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-stateful-identity",
+    "topic": "kubernetes",
+    "title": "Stable identity is not automatic replication",
+    "difficulty": "Intermediate",
+    "format": "choice",
+    "minutes": 8,
+    "tags": [
+      "StatefulSets",
+      "Storage"
+    ],
+    "prompt": "What does StatefulSet help provide without implementing application-level replication by itself?",
+    "solution": "StatefulSet supplies stable Pod identities and ordered lifecycle behavior, with stable storage association when configured. It does not turn an arbitrary database into a replicated or quorum-safe service. The application must still implement replication, membership, and recovery semantics.",
+    "hints": [
+      "Controller identity and data protocol are different layers.",
+      "A persistent volume is not a replication algorithm."
+    ],
+    "rubric": [
+      "Identify stable identity.",
+      "Explain storage association.",
+      "Reject automatic replication correctness."
+    ],
+    "followUp": "Why should a database operator coordinate membership before removing a replica?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ],
+    "options": [
+      "Automatic consensus for any database",
+      "Stable Pod identity and storage association",
+      "Guaranteed zero data loss",
+      "Automatic cross-region synchronous replication"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "kubernetes-network-policy",
+    "topic": "kubernetes",
+    "title": "Isolation depends on selected directions",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "NetworkPolicy",
+      "Isolation"
+    ],
+    "prompt": "Explain how ingress and egress NetworkPolicies affect a selected Pod, including how multiple allowing policies combine.",
+    "solution": "A Pod becomes isolated for a direction when a policy selects it for that direction. Allowed traffic is the union of applicable allows; policies are not an ordered deny-rule list. A connection needs applicable source egress and destination ingress permission, and enforcement requires supporting networking implementation.",
+    "hints": [
+      "Ingress and egress are evaluated separately.",
+      "Multiple allows add rather than override."
+    ],
+    "rubric": [
+      "Explain directional selection.",
+      "Combine allows by union.",
+      "Require both endpoint permissions and enforcement support."
+    ],
+    "followUp": "Why can blocking all egress accidentally break DNS?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-config-refresh",
+    "topic": "kubernetes",
+    "title": "An environment variable does not update itself",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "ConfigMaps",
+      "Configuration"
+    ],
+    "prompt": "A ConfigMap changes, but a running application using environment variables keeps the old value. Explain the behavior and compare a mounted-file approach.",
+    "solution": "Environment variables are established when the container starts and do not refresh in-place. ConfigMap volume content can update eventually under supported mounting modes, but the application must reload it; subPath mounts have additional update limitations. Use an intentional restart or validated reload protocol rather than assuming all configuration channels refresh identically.",
+    "hints": [
+      "The process environment is a startup snapshot.",
+      "A changed file is useful only if read again."
+    ],
+    "rubric": [
+      "Explain fixed environment values.",
+      "Distinguish volume refresh and application reload.",
+      "Define a restart or reload policy."
+    ],
+    "followUp": "How would you validate configuration before making a reload active?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-rbac-scope",
+    "topic": "kubernetes",
+    "title": "Reading Pods is not reading Secrets",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "RBAC",
+      "Least privilege"
+    ],
+    "prompt": "Design RBAC for a namespaced status dashboard that lists Pods and Deployments but does not need Secret contents or mutation rights.",
+    "solution": "Create a namespaced Role with the required get, list, and possibly watch verbs for the relevant resources and API groups. Bind it to a dedicated ServiceAccount in that namespace. Avoid wildcard resources and verbs, cluster-wide binding, or Secret access, and verify effective permissions with representative requests.",
+    "hints": [
+      "Choose resource, verb, and scope independently.",
+      "Deployment and Pod resources use different API groups."
+    ],
+    "rubric": [
+      "Define minimal read verbs and resources.",
+      "Bind a dedicated identity at namespace scope.",
+      "Verify effective access."
+    ],
+    "followUp": "How can an unnecessary exec permission exceed the dashboard's intended authority?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-pv-lifecycle",
+    "topic": "kubernetes",
+    "title": "Deleting a claim need not erase the disk",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Persistent volumes",
+      "Reclaim policy"
+    ],
+    "prompt": "Explain how a persistent volume's reclaim policy affects storage after its claim is deleted, and why an application should not infer backup safety from the word persistent.",
+    "solution": "Reclaim policy determines whether storage is retained for manual handling or deleted through the provisioner when released. Persistence across Pod replacement is not a backup or protection from deletion, corruption, or zone loss. Document storage class behavior and test restore from an independent backup.",
+    "hints": [
+      "Pod lifetime and storage deletion policy differ.",
+      "A surviving disk can still contain corrupted data."
+    ],
+    "rubric": [
+      "Explain Retain versus Delete behavior.",
+      "Separate persistence from backup.",
+      "Test independent recovery."
+    ],
+    "followUp": "What operational handling is needed before reusing a retained volume for another tenant?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-requests-packing",
+    "topic": "kubernetes",
+    "title": "Requests reserve placement, not idle dedication",
+    "difficulty": "Advanced",
+    "format": "numeric",
+    "minutes": 12,
+    "tags": [
+      "Scheduling",
+      "Resource requests"
+    ],
+    "prompt": "A node has 7500 millicores allocatable. Ignoring other constraints, how many Pods requesting 1200 millicores each can the scheduler place on it?",
+    "solution": "6, because floor(7500/1200)=6, consuming 7200 millicores of requests. This placement calculation does not guarantee CPU isolation or reflect actual utilization. Memory, affinity, topology, and other resources can impose tighter limits.",
+    "hints": [
+      "Use allocatable rather than physical capacity.",
+      "The final Pod must fit entirely."
+    ],
+    "rubric": [
+      "Compute six Pods.",
+      "Account for 7200 requested millicores.",
+      "State excluded scheduling constraints."
+    ],
+    "followUp": "What happens to placement if each Pod adds a sidecar requesting 100 millicores?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ],
+    "expected": "6"
+  },
+  {
+    "id": "kubernetes-finalizer-stuck",
+    "topic": "kubernetes",
+    "title": "Deletion is waiting for a protocol",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Finalizers",
+      "Controllers"
+    ],
+    "prompt": "A custom resource remains Terminating after its controller is removed. Explain the role of finalizers and how to investigate before removing one manually.",
+    "solution": "A deletion timestamp starts deletion, but finalizers retain the object until required cleanup completes and their keys are removed. Inspect the responsible controller and external resources, then restore cleanup or perform a deliberate equivalent. Removing the key blindly can orphan resources or violate deletion invariants.",
+    "hints": [
+      "Deletion intent is not cleanup completion.",
+      "A finalizer key names an outstanding obligation."
+    ],
+    "rubric": [
+      "Explain the retained object.",
+      "Identify the cleanup owner and external state.",
+      "Complete cleanup before bypassing the protocol."
+    ],
+    "followUp": "How should a controller make cleanup idempotent after restart?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-dns-search",
+    "topic": "kubernetes",
+    "title": "A short name can resolve somewhere unexpected",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "DNS",
+      "Services"
+    ],
+    "prompt": "A Pod moved to another namespace connects to the wrong service using the short hostname `cache`. Explain the resolution context and a clearer service-address contract.",
+    "solution": "Cluster DNS search paths commonly qualify a short service name within the caller's namespace. Moving the caller changes that context. Use an appropriately qualified service DNS name when cross-namespace identity is intended, verify the actual cluster domain, and distinguish resolution from authorization or endpoint health.",
+    "hints": [
+      "The caller's namespace contributes to the lookup.",
+      "An IP result does not establish application identity."
+    ],
+    "rubric": [
+      "Explain namespace-relative lookup.",
+      "Use qualified service identity.",
+      "Verify resolution separately from access."
+    ],
+    "followUp": "Why should applications avoid hard-coding an assumed cluster domain?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-image-reproducibility",
+    "topic": "kubernetes",
+    "title": "A tag can point somewhere new",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Images",
+      "Reproducibility"
+    ],
+    "prompt": "Design a rollout policy that can reproduce exactly which image ran, even if a registry tag changes later.",
+    "solution": "Deploy immutable image digests and record the resolved artifact with configuration and release metadata. Use tag names as human labels if useful, but do not treat them as immutable content identity. Validate provenance and rollback availability, and verify actual running image IDs during rollout.",
+    "hints": [
+      "A mutable name differs from a content digest.",
+      "Reproducibility also needs configuration."
+    ],
+    "rubric": [
+      "Pin content identity.",
+      "Record release configuration and provenance.",
+      "Verify runtime and rollback artifacts."
+    ],
+    "followUp": "How could admission policy enforce digest-pinned releases?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-leader-election",
+    "topic": "kubernetes",
+    "title": "A lease does not stop a paused controller",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Leader election",
+      "Fencing"
+    ],
+    "prompt": "Two controller replicas use a lease to elect a leader. The old leader pauses, loses the lease, then resumes. What prevents duplicate external side effects?",
+    "solution": "Lease election alone does not forcibly stop stale execution. Make operations idempotent with stable identities and use downstream fencing or conditional authority checks when exclusivity matters. Revalidate leadership as appropriate, but recognize a check can race with a later side effect unless the protected system enforces the authority boundary.",
+    "hints": [
+      "The old process can continue executing instructions.",
+      "Authority must be enforced where the effect occurs."
+    ],
+    "rubric": [
+      "Identify stale-leader risk.",
+      "Use idempotency or enforced fencing.",
+      "Explain check-to-effect races."
+    ],
+    "followUp": "Which external API feature could make repeated provisioning safe?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-watch-recovery",
+    "topic": "kubernetes",
+    "title": "A watch stream can expire",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "API watches",
+      "Resource versions"
+    ],
+    "prompt": "Design a controller cache that recovers when its watch disconnects and the requested history is no longer available.",
+    "solution": "Use the API's resource-version and list/watch semantics to rebuild a consistent current view, handling expired-history responses by relisting as required. Reconcile desired state rather than assuming every historical event is delivered forever. Make repeated observations safe and do not order unrelated objects using invented numeric resource-version rules.",
+    "hints": [
+      "Watch history is finite.",
+      "Reconciliation should work from current state."
+    ],
+    "rubric": [
+      "Handle disconnect and history expiry.",
+      "Rebuild with supported list/watch semantics.",
+      "Keep reconciliation idempotent."
+    ],
+    "followUp": "Why is treating resourceVersion as an application timestamp unsafe?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-zone-quorum",
+    "topic": "kubernetes",
+    "title": "Spread replicas across meaningful failures",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Topology",
+      "Quorum"
+    ],
+    "prompt": "A five-member quorum service places three members in one zone and one in each of two others. Analyze a failure of the three-member zone and propose placement criteria.",
+    "solution": "Losing the zone removes three members, leaving two, below the required majority of three. Spread placement across relevant failure domains and consider storage topology, replacement capacity, and network assumptions. Replica count alone does not establish zone resilience; verify the application's actual membership and quorum rules.",
+    "hints": [
+      "Count survivors, not only total replicas.",
+      "Placement determines correlated loss."
+    ],
+    "rubric": [
+      "Compute loss of majority.",
+      "Spread by meaningful failure domains.",
+      "Include recovery capacity and storage constraints."
+    ],
+    "followUp": "Can five members distributed across only two zones survive loss of either zone?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-operator-upgrade",
+    "topic": "kubernetes",
+    "title": "Schema changes need a mixed-version plan",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Operators",
+      "CRDs"
+    ],
+    "prompt": "Plan an operator upgrade that changes a custom resource schema while old and new controller versions may briefly coexist.",
+    "solution": "Define compatible served and stored versions, conversion behavior, and a staged migration with rollback limits. Test old objects, defaulting, validation, and both controllers' interpretations before rollout. Prevent mixed versions from fighting over incompatible desired state, and make state migrations observable and restartable.",
+    "hints": [
+      "API compatibility includes stored historical objects.",
+      "Rollback may not understand newly written state."
+    ],
+    "rubric": [
+      "Plan versions and conversion.",
+      "Test mixed-version behavior and old data.",
+      "Define staged migration and rollback limits."
+    ],
+    "followUp": "When would storage-version migration need a separate operational step?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-cluster-recovery",
+    "topic": "kubernetes",
+    "title": "A control-plane backup is only part of recovery",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Disaster recovery",
+      "Backups"
+    ],
+    "prompt": "Design a cluster recovery drill after control-plane data loss. Explain why an etcd backup alone may not restore the whole application.",
+    "solution": "Restore control-plane state using a supported procedure and verify identities, versions, and membership. Separately restore application volumes, external dependencies, secrets and keys, and desired deployment artifacts. Measure recovery point and time objectives through an end-to-end drill, including reconciliation against external resources that may have changed since the snapshot.",
+    "hints": [
+      "API objects and application bytes live in different places.",
+      "External effects can outlive a snapshot rollback."
+    ],
+    "rubric": [
+      "Restore control-plane state correctly.",
+      "Include data and external dependencies.",
+      "Verify end-to-end recovery objectives and reconciliation."
+    ],
+    "followUp": "How would restoring old Secret references affect rotated external credentials?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  },
+  {
+    "id": "kubernetes-multi-tenant-limits",
+    "topic": "kubernetes",
+    "title": "A quota does not bound every noisy neighbor",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Multi-tenancy",
+      "Capacity"
+    ],
+    "prompt": "Design safeguards for a shared Kubernetes cluster where one tenant can create many small objects and generate heavy network traffic despite staying below CPU and memory quotas.",
+    "solution": "Combine resource quotas and object-count limits with authorization, admission rules, network controls, and platform-specific rate or bandwidth mechanisms. Bound control-plane request pressure and observe per-tenant usage. Define which isolation goals the shared cluster can meet and where stronger workload or cluster separation is required.",
+    "hints": [
+      "CPU and memory are only two resource dimensions.",
+      "API objects consume control-plane capacity."
+    ],
+    "rubric": [
+      "Bound object and API pressure.",
+      "Address network and authority limits.",
+      "State isolation and separation requirements."
+    ],
+    "followUp": "Which metrics would reveal a tenant exhausting the API server before worker resources?",
+    "references": [
+      {
+        "title": "Kubernetes concepts",
+        "url": "https://kubernetes.io/docs/concepts/"
+      }
+    ]
+  }
+]

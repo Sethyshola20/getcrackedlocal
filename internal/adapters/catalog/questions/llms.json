@@ -1,0 +1,951 @@
+[
+  {
+    "id": "llms-causal-mask",
+    "topic": "llms",
+    "title": "The future token that leaked into training",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Attention",
+      "Causal masking"
+    ],
+    "prompt": "A decoder-only model is trained to predict the next token. During training, all tokens in a sequence are available in memory. Why must self-attention prevent a position from attending to later input positions? Assume labels are shifted correctly.",
+    "solution": "The model must learn a conditional distribution based only on the prefix available at generation time. If attention can read later positions, it can exploit target information that will not be available during autoregressive inference. This creates a training/inference mismatch and can make training loss misleadingly low.\n\nA causal mask removes those future-position attention edges, commonly by assigning their pre-softmax scores negative infinity. Correct label shifting is a separate requirement. Padding masks, document boundaries, and positional information solve other problems and do not substitute for causal masking.",
+    "rubric": [
+      "Connect next-token prediction to prefix-only information.",
+      "Identify future-token leakage and inference mismatch.",
+      "Distinguish causal masking from label shifting and padding masks."
+    ],
+    "hints": [
+      "What tokens exist when the model generates a new answer one token at a time?",
+      "Training has access to data that inference must predict."
+    ],
+    "followUp": "Why does a bidirectional encoder used for classification not need the same causal restriction?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ],
+    "options": [
+      "It makes every attention operation linear in sequence length.",
+      "It prevents access to information unavailable during autoregressive generation.",
+      "It ensures every token has an equal probability.",
+      "It removes the need for positional information."
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "llms-attention-scores",
+    "topic": "llms",
+    "title": "Count the attention scores",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 7,
+    "tags": [
+      "Attention",
+      "Quadratic scaling"
+    ],
+    "prompt": "For one sequence, a standard dense attention layer has 16 query heads and sequence length 1,024. Before masking, each head forms a full sequence-by-sequence score matrix. How many score elements are there across all heads? Ignore batch size, layers, and head dimension. Enter an integer.",
+    "solution": "Each head has `1,024 × 1,024 = 1,048,576` score elements. Across 16 heads, that is 16,777,216 elements. If materialized as two-byte values, these scores alone would occupy 32 MiB, excluding softmax intermediates and other tensors.\n\nThis counts the mathematical dense matrix, not a promise that an optimized implementation materializes it in full. Tiled exact-attention kernels can avoid storing the complete score matrix in high-bandwidth memory while retaining quadratic arithmetic for dense attention. Causal masking reduces valid interactions but does not automatically change a naive allocation’s shape.",
+    "rubric": [
+      "Multiply sequence length by itself for each head.",
+      "Multiply by the number of query heads.",
+      "Separate mathematical score count from optimized memory materialization."
+    ],
+    "hints": [
+      "Each query position scores every key position before masking.",
+      "Head dimension affects the work per score, not the number of scores."
+    ],
+    "followUp": "What changes in arithmetic and memory if sequence length doubles?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ],
+    "expected": "16777216"
+  },
+  {
+    "id": "llms-label-leak",
+    "topic": "llms",
+    "title": "The suspiciously perfect language model",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 11,
+    "tags": [
+      "Training",
+      "Teacher forcing",
+      "Evaluation"
+    ],
+    "prompt": "A language model’s training loss is nearly zero from the first epoch, yet generated text is poor. The pipeline feeds token IDs into the model and uses the identical token at each position as the target without shifting. Explain the leak. Describe a correct next-token loss alignment and two checks that would distinguish this bug from normal teacher forcing.",
+    "solution": "If a position can read its own token embedding and is trained to output that same token, the task can collapse into copying instead of predicting the next token. Standard next-token training aligns logits at position t with the token at t+1, while a causal mask permits input positions up to t. Some model APIs perform the shift internally, so the data and model loss contract must be inspected before adding another shift.\n\nVerify a tiny hand-written sequence by printing the exact input/target pairs and ignored positions. Test a short prefix and confirm the target is the next unseen token, not the final visible token. Use held-out prefix-only generation and ensure packed-document/padding masks are correct. Teacher forcing supplies the true prior prefix; it does not allow the target token to be its own input at that prediction position.",
+    "rubric": [
+      "Identify same-position copying as a leakage path.",
+      "Specify logits[t] versus token[t+1] with a causal prefix.",
+      "Check whether the model loss already shifts internally.",
+      "Verify hand-constructed pairs and prefix-only generation."
+    ],
+    "hints": [
+      "Which input embedding can influence the logit being scored?",
+      "Teacher forcing reveals previous tokens, not the token currently being predicted."
+    ],
+    "followUp": "How could a packed-sequence boundary leak information between unrelated documents?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-rag",
+    "topic": "llms",
+    "title": "Did retrieval help, or just sound convincing?",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 17,
+    "tags": [
+      "RAG",
+      "Evaluation",
+      "Grounding"
+    ],
+    "prompt": "Design an evaluation for a retrieval-augmented technical assistant over internal documentation. It should distinguish retrieval failures, incorrect synthesis, unsupported claims, and unanswerable questions. Include dataset construction, source freshness, citation checking, leakage prevention, and a comparison with a no-retrieval baseline.",
+    "solution": "Build a held-out set of realistic questions with reference answers, supporting document spans, and explicit unanswerable or conflicting-source cases. Version the corpus and split by document/time where appropriate to avoid near-duplicate leakage. Measure retrieval recall of evidence separately from answer correctness, citation entailment, and abstention behavior. Finding the right document does not prove the generated claim is supported by the cited span.\n\nCompare no retrieval, retrieved context, and oracle evidence to localize failures. Track latency and cost alongside quality. Use a blinded human review sample and calibrated automated checks rather than treating a single model judge as ground truth. Test stale documents, adversarial instructions in retrieved text, and terminology shifts. An answer can be fluent and factually plausible while still being unsupported by the available corpus.",
+    "rubric": [
+      "Separate evidence retrieval from synthesis and citation support.",
+      "Include unanswerable/conflicting cases and versioned held-out data.",
+      "Compare no-retrieval, real retrieval, and oracle-context baselines.",
+      "Validate judging and test stale or untrusted retrieved content."
+    ],
+    "hints": [
+      "A correct-looking answer does not tell you whether retrieval found the necessary evidence.",
+      "Oracle context gives an upper-bound diagnostic for the generation stage."
+    ],
+    "followUp": "How would you evaluate answers that require joining facts from several documents?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-sampling",
+    "topic": "llms",
+    "title": "Temperature cannot repair missing knowledge",
+    "difficulty": "Advanced",
+    "format": "multi_select",
+    "minutes": 9,
+    "tags": [
+      "Sampling",
+      "Temperature",
+      "Calibration"
+    ],
+    "prompt": "For fixed finite logits, consider ordinary softmax sampling at temperature T > 0. Which statements are correct? Select all that apply. Ignore top-k/top-p truncation and numerical rounding.",
+    "solution": "Dividing logits by a positive temperature preserves their ordering. Lower temperature sharpens the distribution, while higher temperature flattens it toward uniformity over the fixed finite vocabulary. Temperature changes how the model’s scores are sampled; it does not insert missing facts or guarantee correctness. Even a very confident argmax may be false.\n\nFor distinct finite logits, entropy increases as temperature rises. The exact behavior of a full generation also depends on the prefix, stopping rules, and any truncation or other logit processors, which are excluded from the mathematical premise here.",
+    "rubric": [
+      "Preserve logit ranking under positive scaling.",
+      "Explain sharpening/flattening without claiming factual improvement.",
+      "Separate token-distribution behavior from complete-answer correctness."
+    ],
+    "hints": [
+      "Multiplication by a positive scalar does not change which number is largest.",
+      "A probability distribution can be confident and still point to a false statement."
+    ],
+    "followUp": "How does adding top-p truncation change which tokens remain available as temperature changes?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ],
+    "options": [
+      "Lower temperature necessarily improves factual accuracy.",
+      "Positive temperature scaling preserves the ranking of finite logits.",
+      "Higher temperature makes this fixed softmax distribution flatter.",
+      "Temperature supplies facts absent from the model and context."
+    ],
+    "correct": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "llms-long-context",
+    "topic": "llms",
+    "title": "A bigger context window is not a free resize",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 20,
+    "tags": [
+      "RoPE",
+      "Long context",
+      "Evaluation"
+    ],
+    "prompt": "You want to extend a decoder model trained on 8k-token sequences to handle 64k. Explain why changing a maximum-length configuration field is insufficient. Discuss positional representation, attention cost, KV memory, training/adaptation data, retrieval alternatives, and an evaluation that tests useful long-range reasoning instead of only a single needle-in-a-haystack case.",
+    "solution": "A larger allocation limit does not ensure the model’s positional scheme or learned behavior generalizes beyond its training range. RoPE scaling/interpolation variants change positional relationships and need model-specific validation; learned absolute embeddings have different constraints. Longer dense attention also increases compute, while decode KV storage grows with the retained sequence length.\n\nEvaluate adaptation data, positional scaling, attention implementation, and serving budgets together. Test multi-hop synthesis, conflicting distant evidence, position sensitivity, distractors, and tasks requiring several remote spans. Measure short-context regressions as well as long-context accuracy, latency, and memory. A single easily localized needle is useful but incomplete. Compare retrieval, compression, or chunked workflows where full-context access is unnecessary. State the actual usable context under the workload rather than equating a configured limit with reliable reasoning capacity.",
+    "rubric": [
+      "Address positional generalization beyond a configuration change.",
+      "Model attention compute and KV memory growth.",
+      "Discuss adaptation and retrieval/compression alternatives.",
+      "Evaluate multi-span reasoning, distractors, position effects, and short-context regressions."
+    ],
+    "hints": [
+      "Can the model represent new positions, and has it learned to use them meaningfully?",
+      "Finding one exact token span is easier than reconciling several distant claims."
+    ],
+    "followUp": "How would you separate a positional failure from retrieval failure caused by distracting context?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-next-token",
+    "topic": "llms",
+    "title": "Training predicts a distribution",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Language modeling",
+      "Training"
+    ],
+    "prompt": "In causal language modeling, what is predicted at each position, and how does teacher-forced training differ from autoregressive generation?",
+    "solution": "Training predicts the next token distribution from the preceding tokens, using known training prefixes. Generation repeatedly conditions on its own chosen output tokens. The model is not trained merely to return one stored continuation, and generation errors can alter later prefixes.",
+    "hints": [
+      "Compare known prefixes with generated prefixes.",
+      "The output before decoding is a distribution."
+    ],
+    "rubric": [
+      "Define next-token prediction.",
+      "Explain teacher forcing.",
+      "Explain generated-prefix feedback."
+    ],
+    "followUp": "Why can an early generation error affect the rest of an answer?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-token-count",
+    "topic": "llms",
+    "title": "Tokens are not necessarily words",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Tokenization",
+      "Context"
+    ],
+    "prompt": "Which statement is safe when estimating a model's input length across different languages and tokenizers?",
+    "solution": "Use the exact tokenizer and formatting applied by the model. Words, characters, and tokens are not interchangeable, and scripts or rare strings can have different segmentation. Include role markers and other template tokens where the model uses them rather than estimating only visible prose.",
+    "hints": [
+      "Segmentation depends on the tokenizer.",
+      "Chat formatting can add hidden token overhead."
+    ],
+    "rubric": [
+      "Reject fixed word-to-token equality.",
+      "Use the model's tokenizer.",
+      "Include formatting overhead."
+    ],
+    "followUp": "Why can source code and natural-language prose have different token-per-character ratios?",
+    "references": [
+      {
+        "title": "SentencePiece · subword tokenization",
+        "url": "https://arxiv.org/abs/1808.06226"
+      }
+    ],
+    "options": [
+      "Every word is exactly one token",
+      "Every character is exactly one token",
+      "Use the model's tokenizer and input template",
+      "All languages use the same token count"
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "llms-embedding-shape",
+    "topic": "llms",
+    "title": "A token lookup returns a vector",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Embeddings",
+      "Tensor shapes"
+    ],
+    "prompt": "An untied embedding table contains 32,000 token rows and 1024 columns. How many scalar parameters are in that table, ignoring other model weights?",
+    "solution": "32,768,000, from 32000×1024. Each token ID selects one row vector. An output projection might share these weights or use another matrix, but the question counts only the specified untied input table.",
+    "hints": [
+      "Multiply vocabulary size by embedding width.",
+      "Do not add an unspecified output layer."
+    ],
+    "rubric": [
+      "Compute 32,768,000.",
+      "Interpret rows as token vectors.",
+      "Respect the counted boundary."
+    ],
+    "followUp": "How would weight tying affect a full model parameter count?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ],
+    "expected": "32768000"
+  },
+  {
+    "id": "llms-softmax-shift",
+    "topic": "llms",
+    "title": "Adding a constant leaves probabilities unchanged",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Softmax",
+      "Logits"
+    ],
+    "prompt": "What happens to softmax probabilities if the same finite constant is added to every logit, in exact arithmetic?",
+    "solution": "They remain unchanged because the common exponential factor cancels between numerator and denominator. Implementations often subtract the maximum logit for numerical stability. Finite-precision overflow is a practical reason to use stable computation, not a change to the mathematical identity.",
+    "hints": [
+      "Factor the same exponential from every term.",
+      "Compare mathematical and floating-point behavior."
+    ],
+    "rubric": [
+      "Identify unchanged probabilities.",
+      "Explain cancellation.",
+      "Explain stable shifting."
+    ],
+    "followUp": "How does multiplying logits differ from adding a common constant?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ],
+    "options": [
+      "They all double",
+      "They remain unchanged",
+      "Only the largest increases",
+      "They become uniform"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "llms-context-budget",
+    "topic": "llms",
+    "title": "Reserve room for the answer",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Context windows",
+      "Prompting"
+    ],
+    "prompt": "A toy model permits 8192 total input-plus-output tokens. The fully formatted input uses 6000 tokens. What is the largest output reservation that fits this stated limit?",
+    "solution": "2192 tokens, from 8192−6000. This assumes the input count already includes all template overhead and no separate output cap applies. Production APIs may enforce additional limits, so the arithmetic is a budget model rather than a universal interface rule.",
+    "hints": [
+      "Count input and output within one total.",
+      "Formatting is already included."
+    ],
+    "rubric": [
+      "Compute 2192.",
+      "State the combined-budget assumption.",
+      "Exclude unspecified extra limits."
+    ],
+    "followUp": "What should happen when retrieval adds another 2500 input tokens?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ],
+    "expected": "2192"
+  },
+  {
+    "id": "llms-pretrain-finetune",
+    "topic": "llms",
+    "title": "The data objective changes behavior",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Pretraining",
+      "Fine-tuning"
+    ],
+    "prompt": "Compare broad next-token pretraining with supervised instruction fine-tuning. Why does instruction fine-tuning not automatically supply current factual knowledge?",
+    "solution": "Pretraining learns patterns from broad text under a language-model objective. Instruction fine-tuning uses chosen prompt-response examples to shape task-following behavior. Its knowledge contribution depends on the data and training, so it does not guarantee current facts, truthful answers, or reliable tool use without evaluation and appropriate information access.",
+    "hints": [
+      "Behavioral examples and factual freshness differ.",
+      "Training data has a collection boundary."
+    ],
+    "rubric": [
+      "Distinguish objectives and data.",
+      "Explain behavioral shaping.",
+      "Reject automatic factual freshness."
+    ],
+    "followUp": "When would retrieval be preferable to retraining for rapidly changing documents?",
+    "references": [
+      {
+        "title": "Training language models to follow instructions with human feedback",
+        "url": "https://arxiv.org/abs/2203.02155"
+      }
+    ]
+  },
+  {
+    "id": "llms-perplexity",
+    "topic": "llms",
+    "title": "Exponentiate the stated mean loss",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Evaluation",
+      "Cross entropy"
+    ],
+    "prompt": "A model's mean token negative log-likelihood is ln(4) using natural logarithms. What is its perplexity on the evaluated tokenization?",
+    "solution": "4, since perplexity is exp(mean negative log-likelihood). Comparisons require compatible tokenization, data, and masking; different token units can change the metric even when text-level behavior is similar. Lower perplexity alone does not establish better task accuracy or factuality.",
+    "hints": [
+      "Natural-log loss uses the exponential inverse.",
+      "Keep tokenization fixed for comparison."
+    ],
+    "rubric": [
+      "Compute four.",
+      "State the exponential relationship.",
+      "Explain comparison and task limits."
+    ],
+    "followUp": "How would the formula differ for loss measured in bits?",
+    "references": [
+      {
+        "title": "Holistic Evaluation of Language Models",
+        "url": "https://arxiv.org/abs/2211.09110"
+      }
+    ],
+    "expected": "4"
+  },
+  {
+    "id": "llms-attention-scale",
+    "topic": "llms",
+    "title": "Scale dot products before softmax",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Attention",
+      "Numerical stability"
+    ],
+    "prompt": "Why does scaled dot-product attention divide query-key scores by the square root of key dimension?",
+    "solution": "Under common variance assumptions, dot-product magnitude grows with key dimension, which can push softmax toward saturation and weak gradients. Dividing by sqrt(d_k) controls that scale. It is not a causal mask, and actual distribution depends on learned representations and normalization.",
+    "hints": [
+      "Sum many approximately independent products.",
+      "Large score differences saturate softmax."
+    ],
+    "rubric": [
+      "Explain dimension-dependent variance.",
+      "Relate scaling to softmax gradients.",
+      "Separate scaling from masking."
+    ],
+    "followUp": "What assumptions support the variance argument?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-multihead",
+    "topic": "llms",
+    "title": "Heads provide separate attention projections",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Attention",
+      "Tensor shapes"
+    ],
+    "prompt": "Explain what multiple attention heads change relative to using one head with the same total hidden width. Avoid claiming each head has a guaranteed human-interpretable role.",
+    "solution": "Heads use distinct learned projections and attention distributions, allowing different representation subspaces and relationships to be combined. Their outputs are concatenated and projected. This changes model structure without guaranteeing that one head corresponds to syntax or another to facts; interpretations must be tested empirically.",
+    "hints": [
+      "Each head computes its own scores.",
+      "Learned specialization is not a semantic contract."
+    ],
+    "rubric": [
+      "Describe separate projections and distributions.",
+      "Explain output combination.",
+      "Avoid guaranteed head interpretations."
+    ],
+    "followUp": "How can pruning experiments test whether a head is necessary for a task?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-residual-path",
+    "topic": "llms",
+    "title": "A skip connection preserves a route",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Transformers",
+      "Residual connections"
+    ],
+    "prompt": "What does a residual connection add to a transformer block, and why does it help optimization without guaranteeing unchanged information?",
+    "solution": "It adds a block's transformed output to its input representation, providing a direct path for signals and gradients. This can ease optimization of deep networks. The sum, normalization, and later transformations still alter the representation, so it is not an untouched archival copy of the input.",
+    "hints": [
+      "A residual uses addition.",
+      "A path for gradients is not a proof of perfect memory."
+    ],
+    "rubric": [
+      "Describe the additive path.",
+      "Explain optimization benefit.",
+      "Reject unchanged-information guarantees."
+    ],
+    "followUp": "How can pre-norm and post-norm placement affect training behavior?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-padding-loss",
+    "topic": "llms",
+    "title": "Padding should not become a target",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Training",
+      "Masking"
+    ],
+    "prompt": "Training loss improves when batches contain more padding, but evaluation quality does not. Explain a likely masking bug and what to inspect.",
+    "solution": "Padding positions may be included as easy prediction targets or in the loss denominator, artificially reducing reported loss. Check target ignore masks, valid-token normalization, attention masking, and any label shifts. Compare loss on identical real tokens under different padding amounts to isolate the error.",
+    "hints": [
+      "More padding should not improve real-token predictions.",
+      "Check both numerator and denominator."
+    ],
+    "rubric": [
+      "Identify padding contamination.",
+      "Verify masks and token normalization.",
+      "Use a padding-invariance comparison."
+    ],
+    "followUp": "Why is an attention mask not automatically a correct loss mask?",
+    "references": [
+      {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762"
+      }
+    ]
+  },
+  {
+    "id": "llms-lora-count",
+    "topic": "llms",
+    "title": "A low-rank update has two factors",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "LoRA",
+      "Parameters"
+    ],
+    "prompt": "For a 4096×4096 weight matrix, a rank-8 LoRA update uses factors of shapes 4096×8 and 8×4096. How many trainable scalar parameters do those factors contain, excluding biases?",
+    "solution": "65,536: 4096×8+8×4096. The base matrix is frozen under the stated setup and is not included in the trainable count. Memory savings also depend on optimizer state, activations, and which layers receive adapters.",
+    "hints": [
+      "Count both factor matrices.",
+      "Exclude the frozen base matrix."
+    ],
+    "rubric": [
+      "Compute each factor size.",
+      "Sum to 65,536.",
+      "State excluded memory components."
+    ],
+    "followUp": "What happens to this parameter count when rank doubles?",
+    "references": [
+      {
+        "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+        "url": "https://arxiv.org/abs/2106.09685"
+      }
+    ],
+    "expected": "65536"
+  },
+  {
+    "id": "llms-preference-objective",
+    "topic": "llms",
+    "title": "Preference pairs are not factual labels",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Alignment",
+      "DPO"
+    ],
+    "prompt": "Explain what a preference-pair training method such as DPO learns from chosen and rejected responses, and why improving its objective does not by itself prove factual accuracy.",
+    "solution": "It adjusts relative response likelihoods using preference comparisons and a reference-policy relationship. Preferences reflect the labeling process and can favor style, verbosity, or other attributes besides truth. Evaluate factuality independently on held-out tasks and inspect preference-data biases rather than treating preference loss as a truth metric.",
+    "hints": [
+      "Ask what the pair labels actually encode.",
+      "A preferred response can still contain an error."
+    ],
+    "rubric": [
+      "Explain relative preference learning.",
+      "Identify label-process bias.",
+      "Require independent factual evaluation."
+    ],
+    "followUp": "How could length bias enter the preference dataset?",
+    "references": [
+      {
+        "title": "Direct Preference Optimization",
+        "url": "https://arxiv.org/abs/2305.18290"
+      }
+    ]
+  },
+  {
+    "id": "llms-split-near-duplicates",
+    "topic": "llms",
+    "title": "Different rows can contain the same example",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Evaluation",
+      "Data leakage"
+    ],
+    "prompt": "Train and test files have disjoint row IDs, but many test examples are lightly edited copies of training examples. Why is evaluation compromised, and how should splitting change?",
+    "solution": "Row identity does not establish content independence. Near-duplicate examples can let memorization inflate held-out performance. Group related documents or sources before splitting, detect exact and near duplicates with appropriate checks, and preserve a separately governed test set that is not repeatedly used for tuning.",
+    "hints": [
+      "Compare semantic content, not only identifiers.",
+      "Split related groups together."
+    ],
+    "rubric": [
+      "Identify content leakage.",
+      "Deduplicate or group before splitting.",
+      "Protect the final evaluation set."
+    ],
+    "followUp": "Why might a time-based split still need duplicate checks?",
+    "references": [
+      {
+        "title": "Holistic Evaluation of Language Models",
+        "url": "https://arxiv.org/abs/2211.09110"
+      }
+    ]
+  },
+  {
+    "id": "llms-retrieval-permissions",
+    "topic": "llms",
+    "title": "Retrieved context must obey the caller's access",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "RAG",
+      "Authorization"
+    ],
+    "prompt": "Design retrieval for a document assistant serving multiple teams. How do you prevent a relevant document from another team's index from leaking through the answer?",
+    "solution": "Apply authorization to candidate retrieval and document fetches using the caller's trusted identity, and keep caches scoped to the effective permissions. Treat retrieved text as data, not authority to change access. Test denied documents and permission changes end to end; a generation instruction alone is not an access-control mechanism.",
+    "hints": [
+      "The retrieval boundary must enforce access.",
+      "Cached context can outlive a permission change."
+    ],
+    "rubric": [
+      "Authorize retrieval and fetches.",
+      "Scope and invalidate caches.",
+      "Test cross-team denial through final output."
+    ],
+    "followUp": "How would shared embeddings differ from shared raw-document access?",
+    "references": [
+      {
+        "title": "Elasticsearch · document-level security",
+        "url": "https://www.elastic.co/guide/en/elasticsearch/reference/current/field-and-document-access-control.html"
+      }
+    ]
+  },
+  {
+    "id": "llms-prompt-injection",
+    "topic": "llms",
+    "title": "A document can contain instructions to the model",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "RAG",
+      "Trust boundaries"
+    ],
+    "prompt": "A retrieved page tells the assistant to ignore its task and reveal private context. Design controls beyond merely asking the model to ignore that sentence.",
+    "solution": "Treat retrieved content as untrusted data and separate it from authoritative instructions. Restrict tools and data access outside the model according to the user's task, avoid exposing unrelated secrets, and test adversarial documents. Content labeling can help, but permission enforcement and limited authority bound the consequences of model mistakes.",
+    "hints": [
+      "Reading text does not authorize its instructions.",
+      "Tool permissions must survive model error."
+    ],
+    "rubric": [
+      "Separate instruction authority from content.",
+      "Enforce least necessary data and tool access.",
+      "Test adversarial retrieval paths."
+    ],
+    "followUp": "Why can filtering only the phrase ignore previous instructions miss attacks?",
+    "references": [
+      {
+        "title": "Indirect Prompt Injection in LLM-integrated applications",
+        "url": "https://arxiv.org/abs/2302.12173"
+      }
+    ]
+  },
+  {
+    "id": "llms-calibration",
+    "topic": "llms",
+    "title": "Confidence language is not a probability estimate",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Evaluation",
+      "Calibration"
+    ],
+    "prompt": "Design an evaluation of whether an assistant's claimed confidence predicts answer correctness. Include a policy for abstention.",
+    "solution": "Use held-out labeled questions, a defined confidence extraction method, and reliability bins or proper scoring rules to compare confidence with outcomes. Evaluate coverage versus error when abstaining below thresholds, including shifts across domains. Fluent certainty alone is not calibrated probability, and thresholds must be validated on the intended use.",
+    "hints": [
+      "Correctness labels are required.",
+      "Abstention trades coverage for error rate."
+    ],
+    "rubric": [
+      "Measure calibration on held-out data.",
+      "Evaluate abstention coverage and risk.",
+      "Check domain shifts."
+    ],
+    "followUp": "How could selective evaluation on only answered questions hide poor coverage?",
+    "references": [
+      {
+        "title": "Language Models (Mostly) Know What They Know",
+        "url": "https://arxiv.org/abs/2207.05221"
+      }
+    ]
+  },
+  {
+    "id": "llms-judge-bias",
+    "topic": "llms",
+    "title": "A model judge may prefer its own style",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Evaluation",
+      "Model judges"
+    ],
+    "prompt": "A model-based judge favors longer answers regardless of correctness. Design checks before using it to compare two systems.",
+    "solution": "Use blinded randomized ordering, explicit criteria, length-controlled pairs, and human-reviewed calibration samples. Measure position, verbosity, and self-preference biases, and report agreement with task-grounded labels. Keep the judge fixed during comparison and inspect disagreements rather than treating its scores as objective truth.",
+    "hints": [
+      "Swap answer order without changing content.",
+      "Hold correctness constant while varying style."
+    ],
+    "rubric": [
+      "Test ordering and length bias.",
+      "Calibrate against grounded review.",
+      "Inspect disagreement and keep comparisons controlled."
+    ],
+    "followUp": "When would executable or exact task checks be stronger evidence than a judge score?",
+    "references": [
+      {
+        "title": "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena",
+        "url": "https://arxiv.org/abs/2306.05685"
+      }
+    ]
+  },
+  {
+    "id": "llms-compute-budget",
+    "topic": "llms",
+    "title": "More parameters can mean fewer useful training tokens",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Scaling laws",
+      "Training compute"
+    ],
+    "prompt": "Under a fixed pretraining compute budget, why can making a model larger reduce its final quality compared with a smaller, better-trained model?",
+    "solution": "Compute is shared between parameter count and tokens processed. A larger model can consume the budget before seeing enough useful data. Compute-optimal scaling studies model this tradeoff, but their fitted relationships depend on data, architecture, and regime; they are not universal guarantees for every downstream task.",
+    "hints": [
+      "A budget limits both model size and training duration.",
+      "Empirical laws have a measured domain."
+    ],
+    "rubric": [
+      "Explain size-token tradeoff.",
+      "Relate undertraining to budget.",
+      "State empirical-law limits."
+    ],
+    "followUp": "How can inference cost change the preferred training allocation?",
+    "references": [
+      {
+        "title": "Training Compute-Optimal Large Language Models",
+        "url": "https://arxiv.org/abs/2203.15556"
+      }
+    ]
+  },
+  {
+    "id": "llms-adapter-data",
+    "topic": "llms",
+    "title": "A successful adapter can still memorize a secret",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Fine-tuning",
+      "Data governance"
+    ],
+    "prompt": "Plan an adapter-training experiment on private support tickets. Include evidence of utility and checks for unintended memorization without assuming few trainable parameters prevent leakage.",
+    "solution": "Minimize and govern training data, split related tickets to avoid leakage, and compare held-out task performance with a baseline. Probe sensitive-string extraction and inappropriate disclosure under a defined test set. Track dataset and adapter versions with controlled access; low-rank adaptation changes parameter count, not a guarantee against memorization.",
+    "hints": [
+      "Small parameter count is not a privacy proof.",
+      "Related tickets can cross evaluation splits."
+    ],
+    "rubric": [
+      "Govern data and split by relationship.",
+      "Measure held-out utility.",
+      "Test disclosure and version access."
+    ],
+    "followUp": "What should happen when a ticket must be removed from future training data?",
+    "references": [
+      {
+        "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+        "url": "https://arxiv.org/abs/2106.09685"
+      }
+    ]
+  },
+  {
+    "id": "llms-structured-output",
+    "topic": "llms",
+    "title": "Valid JSON can contain an invalid action",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Structured outputs",
+      "Validation"
+    ],
+    "prompt": "An assistant returns syntactically valid JSON containing a nonexistent account ID and an out-of-range transfer amount. What additional checks are needed before execution?",
+    "solution": "Validate schema and types, then domain constraints, resource existence, authorization, and any required transaction invariants. Parse success proves only representation validity. Execute through a bounded trusted application layer and handle ambiguity or rejection explicitly rather than treating model-generated fields as validated authority.",
+    "hints": [
+      "Syntax is only the first boundary.",
+      "A valid identifier string may name an unauthorized resource."
+    ],
+    "rubric": [
+      "Separate syntax and domain validity.",
+      "Enforce authorization and invariants.",
+      "Keep execution in trusted application logic."
+    ],
+    "followUp": "How could the user review the resolved action before an irreversible operation?",
+    "references": [
+      {
+        "title": "JSON Schema · validation specification",
+        "url": "https://json-schema.org/draft/2020-12/json-schema-validation"
+      }
+    ]
+  },
+  {
+    "id": "llms-context-order",
+    "topic": "llms",
+    "title": "Relevant evidence can be lost in a long prompt",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Long context",
+      "Evaluation"
+    ],
+    "prompt": "Design a test of whether a long-context model reliably uses evidence regardless of its position, without leaking the answer through the test prompt.",
+    "solution": "Place equivalent answer-bearing evidence at varied positions among controlled distractors, vary context length, and hold question difficulty constant. Measure answer accuracy and supported citations, include unanswerable cases, and separate retrieval from reasoning failures. Randomize templates and preserve held-out cases to avoid tuning to one synthetic pattern.",
+    "hints": [
+      "Vary position while holding content constant.",
+      "Include cases with no supporting answer."
+    ],
+    "rubric": [
+      "Control evidence position and distractors.",
+      "Measure grounded accuracy and abstention.",
+      "Protect held-out evaluation."
+    ],
+    "followUp": "Why is one successful needle-in-a-haystack example insufficient?",
+    "references": [
+      {
+        "title": "Lost in the Middle · long-context evaluation",
+        "url": "https://arxiv.org/abs/2307.03172"
+      }
+    ]
+  },
+  {
+    "id": "llms-model-migration",
+    "topic": "llms",
+    "title": "A better aggregate score can hide a regression",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Model evaluation",
+      "Deployment"
+    ],
+    "prompt": "Plan a model migration for an assistant with several distinct user workflows. Define evidence and rollback conditions beyond one average benchmark score.",
+    "solution": "Build representative workflow slices with grounded success criteria, safety and permission checks, latency, and cost. Compare paired cases and inspect regressions, then use a bounded staged rollout with monitoring and an available rollback artifact. Document uncertainty for rare workflows; aggregate improvement does not erase a severe regression in one critical path.",
+    "hints": [
+      "Average gains can mask subgroup failures.",
+      "Deployment adds latency and tool behavior to offline quality."
+    ],
+    "rubric": [
+      "Evaluate workflow-specific outcomes.",
+      "Include operational behavior and uncertainty.",
+      "Define staged rollout and rollback triggers."
+    ],
+    "followUp": "How would changing the prompt template confound a model-only comparison?",
+    "references": [
+      {
+        "title": "Holistic Evaluation of Language Models",
+        "url": "https://arxiv.org/abs/2211.09110"
+      }
+    ]
+  },
+  {
+    "id": "llms-retrieval-ablation",
+    "topic": "llms",
+    "title": "Find which stage actually improved the answer",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "RAG",
+      "Experiment design"
+    ],
+    "prompt": "A new RAG pipeline improves answer scores. Design ablations to distinguish better retrieval from a stronger generator or a longer context budget.",
+    "solution": "Hold the generator, prompt, budget, and evaluation set fixed while swapping retrieval, then separately compare generators with identical retrieved evidence. Measure retrieval relevance and answer support as well as task success, including no-retrieval and oracle-evidence baselines where appropriate. Use paired outcomes and inspect failures instead of attributing the whole gain to one changed stage.",
+    "hints": [
+      "Change one component at a time.",
+      "Oracle evidence separates missing evidence from reasoning failure."
+    ],
+    "rubric": [
+      "Control confounding components.",
+      "Measure retrieval and answer quality separately.",
+      "Compare informative baselines and paired failures."
+    ],
+    "followUp": "What would it mean if oracle evidence still failed to improve answers?",
+    "references": [
+      {
+        "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+        "url": "https://arxiv.org/abs/2005.11401"
+      }
+    ]
+  }
+]

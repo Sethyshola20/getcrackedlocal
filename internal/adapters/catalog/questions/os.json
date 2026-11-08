@@ -1,0 +1,946 @@
+[
+  {
+    "id": "os-fault",
+    "topic": "os",
+    "title": "A page fault does not imply a disk read",
+    "difficulty": "Foundation",
+    "format": "multi_select",
+    "minutes": 5,
+    "tags": [
+      "Virtual memory",
+      "Page faults"
+    ],
+    "prompt": "A process accesses an address in a valid mapping and takes a page fault. Which explanations are possible on a demand-paged OS? Select all that apply. The question concerns the fault itself, not a TLB miss handled entirely by hardware.",
+    "solution": "A valid mapping can fault on its first access because a physical page has not yet been installed. A write to a copy-on-write mapping can fault so the kernel can allocate and copy a private page. File-backed data absent from memory can also require I/O. Thus not all page faults are disk events, and a valid virtual address does not guarantee a present writable page-table entry.\n\nA TLB miss is a translation-cache miss; on hardware with page-table walking, it may be resolved without a kernel page-fault handler. Invalid permissions or unmapped addresses can also fault, but those do not satisfy the valid-access premise.",
+    "rubric": [
+      "Recognize demand-zero and copy-on-write faults.",
+      "Distinguish resident-memory handling from I/O-backed faults.",
+      "Separate hardware TLB misses from OS-handled page faults."
+    ],
+    "hints": [
+      "The kernel may delay allocating physical memory until it is touched.",
+      "A present shared read-only page can still fault on a write."
+    ],
+    "followUp": "Why can pre-touching a large arena improve tail latency but increase startup time and memory commitment?",
+    "references": [
+      {
+        "title": "Linux kernel documentation",
+        "url": "https://docs.kernel.org/"
+      }
+    ],
+    "options": [
+      "First access to a demand-zero anonymous page.",
+      "A write that triggers copy-on-write.",
+      "A file-backed page that must be fetched from storage.",
+      "Every ordinary TLB miss necessarily enters the kernel fault handler."
+    ],
+    "correct": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "id": "os-cow",
+    "topic": "os",
+    "title": "Forked memory, counted carefully",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 7,
+    "tags": [
+      "Copy on write",
+      "Memory accounting"
+    ],
+    "prompt": "A parent has 128 MiB of private anonymous data, fully resident in 4 KiB pages. After fork, the child writes one byte in **8,192 distinct pages** while the parent stays alive and does not write. Ignore page tables, huge pages, allocator metadata, and zero-page optimizations. How much **additional physical data memory in MiB** is required by these child writes?",
+    "solution": "Each first write to a distinct shared page requires a private 4 KiB copy. The extra data memory is `8,192 × 4,096 = 33,554,432` bytes, or 32 MiB. Writing just one byte still copies at page granularity under these assumptions.\n\nImmediately after fork the two processes can share the original physical pages through copy-on-write mappings. Per-process RSS can count shared resident pages in both processes, so summing RSS is not a reliable way to measure unique physical memory. The question asks for the additional copies, not total RSS or virtual address space.",
+    "rubric": [
+      "Count one copied page per distinct modified page.",
+      "Use 4 KiB pages and binary MiB units.",
+      "Distinguish incremental physical allocation from summed RSS."
+    ],
+    "hints": [
+      "Repeated writes to the same page do not require another COW copy.",
+      "One MiB is 1,048,576 bytes."
+    ],
+    "followUp": "What assumptions break if transparent huge pages are enabled?",
+    "references": [
+      {
+        "title": "Linux kernel documentation",
+        "url": "https://docs.kernel.org/"
+      }
+    ],
+    "expected": "32"
+  },
+  {
+    "id": "os-epoll",
+    "topic": "os",
+    "title": "The socket that never woke again",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 10,
+    "tags": [
+      "epoll",
+      "Nonblocking I/O"
+    ],
+    "prompt": "A Linux event loop uses edge-triggered epoll on a nonblocking TCP socket. After each readability event it calls recv only once. Under load, unread bytes remain but the connection appears to stall. Explain the bug, provide the drain-loop behavior including error cases, and discuss fairness across busy sockets.",
+    "solution": "Edge-triggered readiness reports transitions; it is not a promise to keep notifying while unread data remains. The handler should read repeatedly until recv returns EAGAIN/EWOULDBLOCK. A positive result supplies bytes, zero indicates orderly peer shutdown, EINTR generally warrants retry, and other errors need explicit connection handling. TCP bytes must still be framed by the application.\n\nA permanently busy socket can monopolize a naive drain loop. If using a per-dispatch work budget, preserve readiness in an application runnable queue so work resumes even without another kernel edge. With one-shot registration, rearming must follow a disciplined protocol. The nonblocking flag is essential: draining a blocking descriptor could stall the entire event loop.",
+    "rubric": [
+      "Explain edge-triggered transitions and the need to drain.",
+      "Handle bytes, EOF, EINTR, EAGAIN, and fatal errors.",
+      "Preserve readiness when imposing a fairness budget."
+    ],
+    "hints": [
+      "A readiness edge is different from a level-triggered reminder.",
+      "What return value means the socket currently has no more readable bytes?"
+    ],
+    "followUp": "How does EPOLLONESHOT help multiple event-loop threads avoid concurrent ownership of one connection?",
+    "references": [
+      {
+        "title": "Linux man-pages · epoll",
+        "url": "https://man7.org/linux/man-pages/man7/epoll.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-durability",
+    "topic": "os",
+    "title": "The acknowledgment that survived only in RAM",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 11,
+    "tags": [
+      "fsync",
+      "Crash consistency"
+    ],
+    "prompt": "A service writes a new configuration to `config.tmp`, renames it to `config`, and returns success. A power failure can occur immediately after the acknowledgment. Explain atomic visibility versus durability. Give a filesystem-oriented protocol for replacing a file durably, and state the storage/filesystem assumptions that prevent an absolute universal guarantee.",
+    "solution": "Rename can make the namespace change atomically visible, but atomic visibility does not guarantee persistence after power loss. A typical local-filesystem replacement protocol writes the complete temporary file, checks write errors, fsyncs the temporary file, renames it over the destination in the same filesystem, then fsyncs the containing directory to persist the namespace update. Return success only after required synchronization succeeds.\n\nThe protocol must account for metadata, permissions, cleanup, and platform behavior. The exact guarantee depends on the filesystem, mount options, OS APIs, and whether the storage stack honestly implements flushes and power-loss protection. Buffered writes being accepted by the kernel are not the same as bytes reaching durable media. Cross-filesystem rename is a different operation and does not provide this simple atomic replacement contract.",
+    "rubric": [
+      "Separate atomic namespace visibility from crash durability.",
+      "Synchronize file contents before rename and directory metadata afterward.",
+      "State filesystem/storage assumptions and handle synchronization errors."
+    ],
+    "hints": [
+      "The directory entry and file contents are different persistence concerns.",
+      "A successful write can leave data in the page cache."
+    ],
+    "followUp": "What additional ordering is needed when replacing two related files that must change together?",
+    "references": [
+      {
+        "title": "Linux man-pages · fsync",
+        "url": "https://man7.org/linux/man-pages/man2/fsync.2.html"
+      }
+    ]
+  },
+  {
+    "id": "os-inversion",
+    "topic": "os",
+    "title": "The highest-priority thread runs last",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 10,
+    "tags": [
+      "Scheduling",
+      "Priority inversion"
+    ],
+    "prompt": "A low-priority thread holds mutex M. A high-priority thread blocks on M. A medium-priority CPU-bound thread then prevents the low-priority owner from running on the relevant CPU. Explain why increasing the high-priority thread’s priority does not solve the problem, compare inheritance with shorter critical sections, and identify limits of each repair.",
+    "solution": "The high-priority thread is blocked and cannot run until the low-priority owner releases M. The medium-priority thread can preempt that owner, indirectly delaying the highest-priority thread: priority inversion. Raising the blocked thread’s priority does not make the lock owner progress.\n\nPriority inheritance temporarily raises an owner to the priority of a blocked waiter, potentially propagating through supported lock chains. It requires scheduler and mutex support and does not fix arbitrary blocking I/O or deadlocks inside critical sections. Shorter bounded critical sections reduce exposure and worst-case blocking but do not by themselves enforce a scheduling protocol. Real-time analysis must also account for interrupt activity, preemption rules, CPU affinity, and other lock dependencies.",
+    "rubric": [
+      "Trace the blocked waiter and runnable low-priority owner.",
+      "Explain how inheritance lets the owner finish.",
+      "Discuss bounded critical sections and limits of inheritance."
+    ],
+    "hints": [
+      "Which runnable thread must execute before the high-priority waiter can proceed?",
+      "The medium-priority thread does not need to touch the mutex to cause the delay."
+    ],
+    "followUp": "How does priority-ceiling locking change the analysis compared with inheritance?",
+    "references": [
+      {
+        "title": "Linux kernel documentation",
+        "url": "https://docs.kernel.org/"
+      }
+    ]
+  },
+  {
+    "id": "os-numa",
+    "topic": "os",
+    "title": "Your memory is on the other socket",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 20,
+    "tags": [
+      "NUMA",
+      "Page placement",
+      "Tail latency"
+    ],
+    "prompt": "A two-socket Linux server preallocates a large arena on its main thread, then starts workers pinned evenly across both sockets. Workers on the second socket have much worse tail latency. Design an investigation and placement strategy. Consider first-touch policy, allocator reuse, shared data, migration, huge pages, and the cost of imposing affinity.",
+    "solution": "Establish the NUMA topology, CPU affinity, memory policy, and actual page placement rather than assuming allocation calls choose the eventual node. Under common first-touch policies, initialization by one pinned main thread can fault most pages onto that thread’s node. Remote workers then access memory through an inter-socket path.\n\nPartition the arena by worker or node, initialize each partition on its intended node, and align queue and object ownership with that partition. Measure local/remote accesses, bandwidth, page faults, migrations, queue delays, and full request latency. Interleave intentionally shared read-mostly memory only when that tradeoff helps. Check allocator reuse and kernel balancing, since both can alter placement over time. Huge pages change placement granularity and fault costs. Affinity can improve locality while reducing scheduling flexibility; evaluate asymmetric load and failover, not just a balanced synthetic benchmark.",
+    "rubric": [
+      "Verify actual NUMA topology, policy, and page placement.",
+      "Explain first-touch initialization and propose ownership-aligned placement.",
+      "Measure remote memory, migration, faults, and end-to-end tails.",
+      "Discuss shared memory, huge-page granularity, and affinity tradeoffs."
+    ],
+    "hints": [
+      "Which thread first writes each physical page?",
+      "CPU placement and memory placement must be considered together."
+    ],
+    "followUp": "Would interleaving every page across sockets improve a workload with strictly per-worker ownership?",
+    "references": [
+      {
+        "title": "Linux kernel · NUMA memory policy",
+        "url": "https://docs.kernel.org/admin-guide/mm/numa_memory_policy.html"
+      }
+    ]
+  },
+  {
+    "id": "os-process-thread",
+    "topic": "os",
+    "title": "One address space, several execution streams",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Processes",
+      "Threads"
+    ],
+    "prompt": "Compare two threads in one process with two separate processes. Identify what is typically shared and which properties still require synchronization.",
+    "solution": "Threads share the process address space and many process resources, including open file descriptors, but have separate execution state and stacks. Separate processes normally have distinct virtual address spaces. Shared memory, whether between threads or mapped across processes, still requires a synchronization protocol for concurrent mutation.",
+    "hints": [
+      "A separate stack is still mapped in the process.",
+      "Separate address spaces can explicitly share memory."
+    ],
+    "rubric": [
+      "Identify shared process resources.",
+      "Identify per-thread execution state.",
+      "Require synchronization for shared mutation."
+    ],
+    "followUp": "Why does a private stack not make every pointed-to object private?",
+    "references": [
+      {
+        "title": "Linux manual · pthreads",
+        "url": "https://man7.org/linux/man-pages/man7/pthreads.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-virtual-resident",
+    "topic": "os",
+    "title": "Reserving addresses does not fill RAM",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Virtual memory",
+      "RSS"
+    ],
+    "prompt": "A Linux process reserves a large anonymous mapping but has not touched its pages. Which statement best describes its physical memory usage?",
+    "solution": "Virtual address space can increase without an equal immediate increase in resident physical pages. Demand paging, mapping flags, and policy determine when pages are committed and populated. A successful reservation is not a promise that arbitrary later memory pressure cannot cause failure.",
+    "hints": [
+      "Address reservation and physical residency differ.",
+      "First access can trigger page population."
+    ],
+    "rubric": [
+      "Separate virtual size and residency.",
+      "Explain demand allocation.",
+      "Avoid guaranteed future capacity claims."
+    ],
+    "followUp": "How would touching one byte on every page change the picture?",
+    "references": [
+      {
+        "title": "Linux manual · mmap",
+        "url": "https://man7.org/linux/man-pages/man2/mmap.2.html"
+      }
+    ],
+    "options": [
+      "Every reserved byte is immediately resident",
+      "Virtual size and RSS can differ greatly",
+      "The mapping is not part of the process",
+      "No page fault can occur afterward"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "os-syscall-boundary",
+    "topic": "os",
+    "title": "A library call may cross into the kernel",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "System calls",
+      "Privileges"
+    ],
+    "prompt": "Explain the distinction between a system call and a C library function. Why is one library call not necessarily one kernel transition?",
+    "solution": "A system call invokes a kernel service through an architecture-defined entry mechanism. A library function is a userspace API that may perform no syscall, one syscall, or several. Buffering can combine many library writes into fewer kernel calls, while some time queries can use userspace-accessible kernel-provided data.",
+    "hints": [
+      "API layering is not one-to-one.",
+      "Consider buffered stdio."
+    ],
+    "rubric": [
+      "Define the kernel boundary.",
+      "Separate library API from syscall.",
+      "Give a buffering example."
+    ],
+    "followUp": "What changes when tracing syscalls rather than library function calls?",
+    "references": [
+      {
+        "title": "Linux manual · syscalls",
+        "url": "https://man7.org/linux/man-pages/man2/syscalls.2.html"
+      }
+    ]
+  },
+  {
+    "id": "os-fd-dup",
+    "topic": "os",
+    "title": "Two descriptors can share one file offset",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "File descriptors",
+      "Open file descriptions"
+    ],
+    "prompt": "An ordinary file descriptor is duplicated with dup. The shared offset starts at zero; a read of 10 bytes through the original succeeds, then a read of 5 bytes through the duplicate succeeds. What is the shared offset?",
+    "solution": "15. dup creates another descriptor referring to the same open file description, including its file offset. A separate open would generally create a separate description and offset. Positional reads can avoid modifying the shared offset.",
+    "hints": [
+      "The descriptors reference one open file description.",
+      "Both reads advance that description's offset."
+    ],
+    "rubric": [
+      "Compute 10+5.",
+      "Explain offset sharing.",
+      "Distinguish dup from a separate open."
+    ],
+    "followUp": "How does pread change offset handling?",
+    "references": [
+      {
+        "title": "Linux manual · dup",
+        "url": "https://man7.org/linux/man-pages/man2/dup.2.html"
+      }
+    ],
+    "expected": "15"
+  },
+  {
+    "id": "os-context-switch",
+    "topic": "os",
+    "title": "Switching tasks has more than one cost",
+    "difficulty": "Foundation",
+    "format": "multi_select",
+    "minutes": 5,
+    "tags": [
+      "Scheduling",
+      "Context switches"
+    ],
+    "prompt": "Which can contribute to the cost of switching execution between tasks?",
+    "solution": "Saving and restoring execution state costs work, and changes in working set can affect caches, TLBs, and branch prediction. The exact cost depends on architecture and whether address spaces change. A context switch does not inherently require copying all process memory.",
+    "hints": [
+      "Execution state is small compared with an entire address space.",
+      "Indirect cache effects may dominate."
+    ],
+    "rubric": [
+      "Identify state-switch work.",
+      "Include locality effects.",
+      "Reject full-memory copying."
+    ],
+    "followUp": "Why might two threads in one process differ from two unrelated processes?",
+    "references": [
+      {
+        "title": "Linux manual · sched",
+        "url": "https://man7.org/linux/man-pages/man7/sched.7.html"
+      }
+    ],
+    "options": [
+      "Saving and restoring execution state",
+      "Copying every byte of both processes",
+      "Loss of useful cache or TLB locality",
+      "Mandatory disk I/O on every switch"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "os-permissions",
+    "topic": "os",
+    "title": "Read permission is not execute permission",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Permissions",
+      "Filesystems"
+    ],
+    "prompt": "A regular file has mode 0640. Interpret owner, group, and other permissions, and explain why these bits alone do not establish whether a path can be opened.",
+    "solution": "The owner has read/write, the group read, and others no permissions. No execute bit is set. Path traversal needs search permission on parent directories, and ACLs, credentials, mounts, and security policy can further affect access. Evaluate the complete access context rather than only the final inode's mode.",
+    "hints": [
+      "Split the octal mode into three digits.",
+      "Reaching the file requires traversing directories."
+    ],
+    "rubric": [
+      "Interpret 6,4,0 correctly.",
+      "Identify no execute permission.",
+      "Include parent traversal and policy."
+    ],
+    "followUp": "What does execute permission mean on a directory?",
+    "references": [
+      {
+        "title": "Linux manual · path_resolution",
+        "url": "https://man7.org/linux/man-pages/man7/path_resolution.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-zombie-child",
+    "topic": "os",
+    "title": "An exited child still needs reaping",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Processes",
+      "Wait"
+    ],
+    "prompt": "A server repeatedly forks short-lived children and never waits. Zombie entries accumulate. Explain what remains after exit and how to reap without blocking request handling indefinitely.",
+    "solution": "An exited child can retain a small process-table record and exit status until its parent waits. Reap children through an appropriate waitpid loop, often integrated with SIGCHLD handling or a dedicated reaper. Do not perform arbitrary unsafe work in a signal handler; account for multiple exits per notification.",
+    "hints": [
+      "A zombie is not still executing.",
+      "Signals may coalesce."
+    ],
+    "rubric": [
+      "Distinguish exit from reaping.",
+      "Collect all available child statuses.",
+      "Integrate safe nonblocking reaping."
+    ],
+    "followUp": "How is an orphaned live process different from a zombie?",
+    "references": [
+      {
+        "title": "Linux manual · waitpid",
+        "url": "https://man7.org/linux/man-pages/man2/waitpid.2.html"
+      }
+    ]
+  },
+  {
+    "id": "os-pipe-eof",
+    "topic": "os",
+    "title": "One forgotten writer prevents EOF",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Pipes",
+      "Descriptors"
+    ],
+    "prompt": "A reader waits forever for pipe EOF after the intended writer exits. A helper process inherited another write descriptor. Explain the behavior and repair descriptor ownership.",
+    "solution": "EOF arrives only after all write ends are closed and buffered bytes are consumed. The inherited descriptor keeps the pipe writable even if unused. Close unused ends after fork and use close-on-exec where appropriate; track ownership in every process rather than only the intended writer.",
+    "hints": [
+      "Count all open write references.",
+      "Unused still means open."
+    ],
+    "rubric": [
+      "State the EOF condition.",
+      "Identify inherited ownership.",
+      "Close unused descriptors and control exec inheritance."
+    ],
+    "followUp": "Why can keeping a read end open affect SIGPIPE behavior?",
+    "references": [
+      {
+        "title": "Linux manual · pipe",
+        "url": "https://man7.org/linux/man-pages/man7/pipe.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-signal-safety",
+    "topic": "os",
+    "title": "A signal can interrupt the allocator",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Signals",
+      "Async safety"
+    ],
+    "prompt": "Why is calling printf or a general allocator from an asynchronous signal handler unsafe? Describe a safer notification pattern.",
+    "solution": "The handler may interrupt code while internal locks or data structures are inconsistent, then re-enter the same non-async-signal-safe routines. Keep the handler minimal and use an approved mechanism such as writing to a nonblocking self-pipe, preserving errno and handling capacity limits. Perform normal processing in the main loop.",
+    "hints": [
+      "The interrupted operation may already hold an internal lock.",
+      "Notifications can be processed later."
+    ],
+    "rubric": [
+      "Explain reentrancy risk.",
+      "Use an async-signal-safe notification.",
+      "Defer complex work and handle overflow."
+    ],
+    "followUp": "When could a dedicated signal-waiting thread simplify the design?",
+    "references": [
+      {
+        "title": "Linux manual · signal-safety",
+        "url": "https://man7.org/linux/man-pages/man7/signal-safety.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-short-write",
+    "topic": "os",
+    "title": "A successful write can be partial",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "I/O",
+      "Partial operations"
+    ],
+    "prompt": "A function calls write once and assumes all requested bytes were accepted because the result is positive. Explain the bug for a stream and a correct retry loop.",
+    "solution": "A positive result may cover only a prefix. Advance the buffer by the returned count and continue until complete, handling interruption and nonblocking would-block outcomes according to the API. Distinguish accepted bytes from durable storage or remote consumption; completion at one boundary proves neither of the others.",
+    "hints": [
+      "The return value is a byte count.",
+      "Preserve progress before retrying."
+    ],
+    "rubric": [
+      "Handle partial progress.",
+      "Classify interruption and would-block.",
+      "Distinguish acceptance from durability."
+    ],
+    "followUp": "How does cancellation interact with a partially transmitted application message?",
+    "references": [
+      {
+        "title": "Linux manual · write",
+        "url": "https://man7.org/linux/man-pages/man2/write.2.html"
+      }
+    ]
+  },
+  {
+    "id": "os-mmap-truncate",
+    "topic": "os",
+    "title": "A mapped address can lose its backing bytes",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "mmap",
+      "SIGBUS"
+    ],
+    "prompt": "A file is mapped read-only, then another process truncates it. Accessing a formerly valid mapped offset may crash. Explain why mapping did not provide a stable snapshot.",
+    "solution": "A file-backed mapping refers to the file's backing state, not an immutable copied file. Access beyond the new end can raise SIGBUS. Coordinate file replacement and lifetime, use immutable versioned files, or read an owned snapshot when stability is required; read-only access does not freeze another writer's changes.",
+    "hints": [
+      "Read-only applies to this mapping's writes.",
+      "File size can change elsewhere."
+    ],
+    "rubric": [
+      "Explain backing-file dependence.",
+      "Identify truncation and SIGBUS.",
+      "Propose a stable ownership protocol."
+    ],
+    "followUp": "Why can replacing a pathname differ from truncating the already mapped inode?",
+    "references": [
+      {
+        "title": "Linux manual · mmap",
+        "url": "https://man7.org/linux/man-pages/man2/mmap.2.html"
+      }
+    ]
+  },
+  {
+    "id": "os-page-count",
+    "topic": "os",
+    "title": "Round a mapping up to pages",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Paging",
+      "Address space"
+    ],
+    "prompt": "With 4096-byte pages and a page-aligned start, how many pages cover 10,000 contiguous bytes?",
+    "solution": "3 pages, because ceil(10000/4096)=3. The final page is only partly used by the requested byte range. This counts address-space coverage, not a guarantee that all three pages are currently resident or privately allocated.",
+    "hints": [
+      "Use ceiling division.",
+      "Two pages cover only 8192 bytes."
+    ],
+    "rubric": [
+      "Compute three pages.",
+      "Account for partial final use.",
+      "Distinguish coverage from residency."
+    ],
+    "followUp": "How would an unaligned starting offset change the calculation?",
+    "references": [
+      {
+        "title": "Linux manual · getpagesize",
+        "url": "https://man7.org/linux/man-pages/man2/getpagesize.2.html"
+      }
+    ],
+    "expected": "3"
+  },
+  {
+    "id": "os-load-average",
+    "topic": "os",
+    "title": "Load is not CPU utilization",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Scheduling",
+      "Observability"
+    ],
+    "prompt": "A Linux machine has low CPU utilization but a high load average. Explain a plausible cause and the next measurements to inspect.",
+    "solution": "Linux load includes runnable tasks and tasks in uninterruptible sleep, often waiting on I/O. High load can therefore coexist with idle CPU. Inspect task states, storage latency, blocked stacks, and pressure metrics before adding CPU capacity; compare the load with available CPUs and container constraints.",
+    "hints": [
+      "Not every counted task is executing.",
+      "D-state waits can dominate."
+    ],
+    "rubric": [
+      "Define the relevant task population.",
+      "Explain low CPU with blocked work.",
+      "Choose discriminating measurements."
+    ],
+    "followUp": "How could CPU quotas make host-wide utilization misleading?",
+    "references": [
+      {
+        "title": "Linux manual · proc_loadavg",
+        "url": "https://man7.org/linux/man-pages/man5/proc_loadavg.5.html"
+      }
+    ]
+  },
+  {
+    "id": "os-monotonic-time",
+    "topic": "os",
+    "title": "A wall clock can move backward",
+    "difficulty": "Intermediate",
+    "format": "choice",
+    "minutes": 8,
+    "tags": [
+      "Clocks",
+      "Timeouts"
+    ],
+    "prompt": "Which clock is appropriate for measuring ordinary elapsed request time without wall-clock corrections causing negative durations?",
+    "solution": "A monotonic clock measures intervals without ordinary wall-clock adjustments. A realtime clock represents calendar time and can be stepped. Suspend inclusion depends on the particular clock, so choose a clock whose suspend semantics match the deadline policy.",
+    "hints": [
+      "Elapsed time and calendar time serve different purposes.",
+      "Consider clock adjustments and suspend separately."
+    ],
+    "rubric": [
+      "Choose a monotonic interval clock.",
+      "Distinguish wall time.",
+      "State suspend-policy dependence."
+    ],
+    "followUp": "When would CLOCK_BOOTTIME be preferable on Linux?",
+    "references": [
+      {
+        "title": "Linux manual · clock_gettime",
+        "url": "https://man7.org/linux/man-pages/man2/clock_gettime.2.html"
+      }
+    ],
+    "options": [
+      "CLOCK_REALTIME always",
+      "A suitable monotonic clock",
+      "The displayed local timezone",
+      "A timestamp parsed from a log line"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "os-cgroup-throttle",
+    "topic": "os",
+    "title": "An idle host can still throttle a process",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "cgroups",
+      "CPU quotas"
+    ],
+    "prompt": "A container has a one-CPU quota, eight busy threads, and long latency tails while the host is mostly idle. Explain the quota mechanism and how to validate the cause.",
+    "solution": "The cgroup can exhaust its CPU runtime budget within a quota period and be throttled until replenishment, regardless of spare host capacity. Inspect cgroup CPU statistics and correlate throttled time with latency. Tune parallelism and quota based on workload, distinguishing quota from CPU affinity or scheduling weight.",
+    "hints": [
+      "A quota limits aggregate runtime.",
+      "Many threads can burn the budget early."
+    ],
+    "rubric": [
+      "Explain periodic budget exhaustion.",
+      "Measure throttling correlation.",
+      "Distinguish quota, weight, and affinity."
+    ],
+    "followUp": "Why might lowering worker parallelism improve tail latency under the same quota?",
+    "references": [
+      {
+        "title": "Linux kernel · cgroup v2 CPU controller",
+        "url": "https://docs.kernel.org/admin-guide/cgroup-v2.html#cpu"
+      }
+    ]
+  },
+  {
+    "id": "os-futex-state",
+    "topic": "os",
+    "title": "A wakeup must follow a state transition",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Futex",
+      "Synchronization"
+    ],
+    "prompt": "A custom futex-based wait can hang if it treats wakeups as stored messages. Explain the role of the userspace state and the expected-value check.",
+    "solution": "A futex wait checks the userspace word against an expected value and sleeps only if it still matches. Correct code changes synchronized state and loops on its predicate; waking only prompts rechecking. The protocol must cover the race between observing state and sleeping, and account for spurious or interrupted returns.",
+    "hints": [
+      "The state word is persistent; a wakeup is not.",
+      "Sleep must be conditional on the observed state."
+    ],
+    "rubric": [
+      "Explain expected-value waiting.",
+      "Use a predicate loop.",
+      "Handle observe-to-sleep races and wakeup returns."
+    ],
+    "followUp": "Why does a futex syscall alone not prove all memory-ordering requirements?",
+    "references": [
+      {
+        "title": "Linux manual · futex",
+        "url": "https://man7.org/linux/man-pages/man2/futex.2.html"
+      }
+    ]
+  },
+  {
+    "id": "os-page-cache",
+    "topic": "os",
+    "title": "A warm benchmark measures another path",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Page cache",
+      "Benchmarking"
+    ],
+    "prompt": "A file-read benchmark becomes much faster after its first run. Design a comparison that distinguishes cache effects from storage improvements.",
+    "solution": "Report warm and cold conditions separately, with file size, working set, cache state, and I/O mode documented. Measure actual device activity and latency, avoid disruptive system-wide cache changes on shared machines, and repeat comparable runs. Warm page-cache bandwidth is not evidence of physical device throughput.",
+    "hints": [
+      "The second read may not reach the device.",
+      "Verify actual I/O rather than assuming it."
+    ],
+    "rubric": [
+      "Separate warm and cold paths.",
+      "Document and control working-set conditions.",
+      "Measure device activity."
+    ],
+    "followUp": "How can readahead affect sequential-read results?",
+    "references": [
+      {
+        "title": "Linux kernel · page cache",
+        "url": "https://docs.kernel.org/mm/page_cache.html"
+      }
+    ]
+  },
+  {
+    "id": "os-rename-durable",
+    "topic": "os",
+    "title": "Atomic visibility does not imply crash persistence",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Filesystems",
+      "Rename"
+    ],
+    "prompt": "A service writes a temporary file and renames it over a configuration file. Explain the difference between atomic replacement visibility and crash durability.",
+    "solution": "A same-filesystem rename can provide atomic namespace replacement, so readers see an old or new name binding. Durability requires the appropriate synchronization of file contents and containing directory under the filesystem's contract. Check all errors and recovery states; atomic visibility alone does not prove the new bytes survive power loss.",
+    "hints": [
+      "Readers and a reboot observe different boundaries.",
+      "Directory entries are metadata too."
+    ],
+    "rubric": [
+      "Separate visibility and durability.",
+      "Synchronize content and namespace appropriately.",
+      "Check failure and recovery behavior."
+    ],
+    "followUp": "Why should the temporary file be created on the destination filesystem?",
+    "references": [
+      {
+        "title": "Linux manual · fsync",
+        "url": "https://man7.org/linux/man-pages/man2/fsync.2.html"
+      }
+    ]
+  },
+  {
+    "id": "os-priority-policy",
+    "topic": "os",
+    "title": "A realtime task can starve essential work",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Scheduling",
+      "Realtime"
+    ],
+    "prompt": "A latency-sensitive thread is assigned a high realtime priority and spins continuously. What system-wide failure modes should a deployment test cover?",
+    "solution": "It can starve lower-priority tasks needed for logging, networking, memory management, or shutdown, especially under tight affinity. Bound busy periods, reserve capacity for dependencies, and test overload and watchdog recovery. Priority policy is not a guarantee of bounded end-to-end latency when dependencies remain unbounded.",
+    "hints": [
+      "The fast thread still depends on other work.",
+      "A spinner may never voluntarily block."
+    ],
+    "rubric": [
+      "Identify starvation dependencies.",
+      "Bound or isolate CPU consumption.",
+      "Test recovery under overload."
+    ],
+    "followUp": "How can priority inheritance address only one part of this problem?",
+    "references": [
+      {
+        "title": "Linux manual · sched",
+        "url": "https://man7.org/linux/man-pages/man7/sched.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-thp-tradeoff",
+    "topic": "os",
+    "title": "Fewer translations can cost a compaction pause",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Huge pages",
+      "Memory latency"
+    ],
+    "prompt": "Explain how transparent huge pages can help a memory-heavy service yet worsen some latency tails. What should a workload-specific experiment measure?",
+    "solution": "Larger pages can reduce translation pressure and TLB misses. Allocation, collapse, or compaction work can introduce latency and fragmentation effects. Compare the relevant huge-page policies using request tails, fault and compaction events, residency, and memory footprint under representative pressure rather than assuming one policy is universally best.",
+    "hints": [
+      "Translation efficiency and allocation latency are different costs.",
+      "Observe compaction alongside request tails."
+    ],
+    "rubric": [
+      "Explain TLB benefit.",
+      "Identify allocation or compaction costs.",
+      "Measure workload-specific tradeoffs."
+    ],
+    "followUp": "Why might a predictable preallocated workload behave differently?",
+    "references": [
+      {
+        "title": "Linux kernel · transparent huge pages",
+        "url": "https://docs.kernel.org/admin-guide/mm/transhuge.html"
+      }
+    ]
+  },
+  {
+    "id": "os-io-submission",
+    "topic": "os",
+    "title": "Asynchronous I/O still owns buffers",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Async I/O",
+      "Buffer lifetime"
+    ],
+    "prompt": "Design ownership for buffers submitted to asynchronous kernel I/O. When may an application reuse a buffer, and why is requesting cancellation not sufficient evidence?",
+    "solution": "Keep each buffer valid and appropriately accessible until the operation's completion contract permits reuse. Track submission identifiers and terminal outcomes, including cancellation races. A cancellation request can arrive after completion or fail to stop an operation; only the API's confirmed terminal state releases ownership safely.",
+    "hints": [
+      "Submission returns before I/O finishes.",
+      "Cancellation itself may be asynchronous."
+    ],
+    "rubric": [
+      "Retain buffers until permitted completion.",
+      "Correlate terminal outcomes.",
+      "Handle cancellation races."
+    ],
+    "followUp": "How would partial completion affect resubmission of the remaining range?",
+    "references": [
+      {
+        "title": "Linux manual · aio",
+        "url": "https://man7.org/linux/man-pages/man7/aio.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-memory-pressure",
+    "topic": "os",
+    "title": "Reclaim can become application latency",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Memory pressure",
+      "Observability"
+    ],
+    "prompt": "A service experiences pauses without a large CPU spike as its memory limit approaches. Plan an investigation separating reclaim, swap, and application allocation behavior.",
+    "solution": "Correlate latency with memory pressure stall information, major faults, swap activity, cgroup events, and reclaim work. Distinguish live working set from reclaimable page cache and allocator retention. Reproduce near-limit behavior with bounded load, then test a targeted reduction or limit change and verify both tails and failure modes.",
+    "hints": [
+      "The application can stall on memory availability.",
+      "Resident size alone does not explain reclaimability."
+    ],
+    "rubric": [
+      "Collect pressure and fault evidence.",
+      "Separate working-set components.",
+      "Validate a targeted change near limits."
+    ],
+    "followUp": "What evidence would show a limit-induced OOM rather than ordinary reclaim?",
+    "references": [
+      {
+        "title": "Linux kernel · pressure stall information",
+        "url": "https://docs.kernel.org/accounting/psi.html"
+      }
+    ]
+  },
+  {
+    "id": "os-sandbox-boundary",
+    "topic": "os",
+    "title": "A namespace is not a full isolation policy",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Isolation",
+      "Containers"
+    ],
+    "prompt": "Design isolation for executing untrusted programs on Linux. Explain why creating PID and mount namespaces alone is insufficient.",
+    "solution": "Namespaces isolate views but do not alone restrict every syscall, capability, resource, or exposed filesystem object. Combine carefully configured user and other namespaces, capability removal, syscall filtering, resource limits, restricted mounts, and a bounded supervisor with cleanup. Evaluate the complete threat model and kernel exposure rather than equating a namespace with a security boundary.",
+    "hints": [
+      "Visibility and authority differ.",
+      "Include resource exhaustion and inherited descriptors."
+    ],
+    "rubric": [
+      "Separate namespace views from permissions.",
+      "Restrict authority and resources.",
+      "Supervise lifecycle and cleanup."
+    ],
+    "followUp": "Why must host sockets and inherited descriptors be audited?",
+    "references": [
+      {
+        "title": "Linux manual · namespaces",
+        "url": "https://man7.org/linux/man-pages/man7/namespaces.7.html"
+      }
+    ]
+  },
+  {
+    "id": "os-failure-injection",
+    "topic": "os",
+    "title": "Test the crash between two instructions",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Durability",
+      "Testing"
+    ],
+    "prompt": "A local state store claims crash-safe updates. Design failure injection that distinguishes clean process exit, abrupt process death, and machine power loss.",
+    "solution": "Enumerate write, sync, and rename boundaries, then restart after failures at each point and verify invariants. Abrupt process death may leave the kernel cache intact, so it is weaker than power-loss testing. Use a controlled environment with storage assumptions documented, and accept only recovery states permitted by the durability contract.",
+    "hints": [
+      "The OS can flush data after a process dies.",
+      "Enumerate allowed old and new states."
+    ],
+    "rubric": [
+      "Inject at persistence boundaries.",
+      "Distinguish process and machine failure.",
+      "Verify documented recovery invariants."
+    ],
+    "followUp": "How could a fault-injecting filesystem model short writes and sync errors?",
+    "references": [
+      {
+        "title": "Linux manual · fsync",
+        "url": "https://man7.org/linux/man-pages/man2/fsync.2.html"
+      }
+    ]
+  }
+]

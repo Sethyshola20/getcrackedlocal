@@ -1,0 +1,951 @@
+[
+  {
+    "id": "distributed-partition",
+    "topic": "distributed",
+    "title": "The partition forces a choice",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 6,
+    "tags": [
+      "Consistency",
+      "Availability",
+      "CAP"
+    ],
+    "prompt": "A replicated register is split into two network partitions. Clients can reach both sides. You require linearizable reads/writes and every request to a non-failed node to complete successfully without waiting for the partition to heal. Which statement is correct under an asynchronous partition model?",
+    "solution": "Those requirements cannot both be guaranteed during the partition. If both sides independently acknowledge conflicting writes and serve fresh linearizable reads, they cannot maintain one real-time-consistent register history without communication. Preserving linearizability requires some operations to wait or fail on a side that cannot safely coordinate.\n\nThis is a statement about behavior under partitions, not a rule that every system permanently chooses only two useful properties. Practical systems define consistency and availability contracts per operation and failure mode. Returning an error is operationally useful but does not satisfy the successful-response availability requirement stated here.",
+    "rubric": [
+      "Identify the incompatible requirements during a partition.",
+      "Relate linearizability to one real-time-consistent history.",
+      "Distinguish practical error handling from the stated availability definition."
+    ],
+    "hints": [
+      "Can either side know whether the other side just acknowledged a write?",
+      "A timeout does not restore information lost by the partition."
+    ],
+    "followUp": "Which operations could remain available if the application only requires commutative increments?",
+    "references": [
+      {
+        "title": "Raft · extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ],
+    "options": [
+      "Both guarantees always hold if replicas retry enough.",
+      "Both guarantees always hold if each side elects a leader.",
+      "The requirements cannot both be guaranteed during a partition.",
+      "A larger cache makes the register linearizable."
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "distributed-intersection",
+    "topic": "distributed",
+    "title": "Where must two quorums meet?",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 6,
+    "tags": [
+      "Quorums",
+      "Replication"
+    ],
+    "prompt": "A fixed group has N=7 replicas. A write is acknowledged by W=4 distinct replicas. What is the smallest read quorum R that is guaranteed to intersect every such write quorum? Count only set intersection; do not assume that intersection alone proves linearizability.",
+    "solution": "Read and write sets must satisfy `R + W > N`. With W=4 and N=7, the smallest R is 4. A read set of size 3 can be disjoint from a particular write set of size 4; a set of size 4 cannot.\n\nIntersection is a combinatorial requirement, not a complete protocol. Correctness also depends on version selection, concurrent writes, partial writes, failure handling, membership changes, and repair. A system with sloppy quorums or dynamic replacement replicas may not preserve the assumed fixed-set intersection.",
+    "rubric": [
+      "Use the strict inequality R+W>N.",
+      "Find the smallest integer satisfying it.",
+      "Avoid claiming intersection alone proves linearizability."
+    ],
+    "hints": [
+      "Can all read replicas fit entirely in the complement of the write set?",
+      "The complement of four replicas in a seven-member group contains three."
+    ],
+    "followUp": "Why does a read that contacts four replicas but returns the first response not implement a four-replica read quorum?",
+    "references": [
+      {
+        "title": "Raft · extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ],
+    "expected": "4"
+  },
+  {
+    "id": "distributed-lost-update",
+    "topic": "distributed",
+    "title": "Both writes succeeded. One update vanished.",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 10,
+    "tags": [
+      "Concurrency",
+      "Compare-and-swap"
+    ],
+    "prompt": "Two clients read the same object `{version: 7, count: 10}` from a linearizable key-value store. Each computes count+1 and writes `{count: 11}`. Both writes succeed. Explain why linearizable individual operations do not make the read-modify-write sequence atomic. Provide two valid API-level repairs and describe the retry rule for one of them.",
+    "solution": "Each read and write can be individually linearizable while the multi-operation sequence interleaves. Both clients read 10 before either write, and the second write overwrites 11 with 11. The result reflects only one logical increment even though both write calls succeeded.\n\nUse an atomic increment operation, or a conditional write comparing the previously read version. With compare-and-swap, exactly one update based on version 7 succeeds; the other must reread the current version and recompute before retrying. Merely resending the stale value repeats the bug. A transaction that serializes the complete read-modify-write is another repair. Bound retries and distinguish a rejected condition from an ambiguous timeout after a successful commit.",
+    "rubric": [
+      "Distinguish operation linearizability from multi-operation atomicity.",
+      "Offer atomic increment and versioned conditional write/transaction.",
+      "Reread and recompute after a version conflict."
+    ],
+    "hints": [
+      "List a valid order of the four store operations.",
+      "A conditional write can reject a result computed from an obsolete version."
+    ],
+    "followUp": "What extra identity is needed if a client retries an atomic increment after an ambiguous timeout?",
+    "references": [
+      {
+        "title": "Raft · extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-dedupe",
+    "topic": "distributed",
+    "title": "Exactly once, within which boundary?",
+    "difficulty": "Advanced",
+    "format": "code",
+    "minutes": 15,
+    "tags": [
+      "Idempotency",
+      "Transactions",
+      "API design"
+    ],
+    "prompt": "Write pseudocode for an idempotent `POST /transfers` handler. The request contains a stable idempotency key and a source/destination/amount. Two identical retries may run concurrently. Balances and the idempotency table share one transactional database. Explain uniqueness, payload mismatch, result replay, insufficient funds, and the commit-before-response crash window.",
+    "solution": "Use a unique constraint on the appropriately scoped idempotency key. Within a transaction, create/claim the key with a canonical request fingerprint, lock or conditionally update the affected balances, validate sufficient funds, and persist the terminal result. Commit the balances and result together. A concurrent loser waits/retries according to database behavior and reads the committed result; it must not apply the effect again.\n\nThe same key with a different fingerprint is a conflict. If the process crashes after commit but before responding, the retry returns the stored result. Decide whether validation/business failures are replayable terminal outcomes and retain keys for the advertised retry horizon. Do not perform an uncoordinated external side effect inside the handler and assume the database transaction makes it exactly once.",
+    "rubric": [
+      "Use a scoped unique key and canonical payload fingerprint.",
+      "Commit balance effects and terminal result atomically.",
+      "Handle concurrent retries, mismatch, and insufficient funds.",
+      "Replay after commit-before-response and define retention boundaries."
+    ],
+    "hints": [
+      "SELECT-then-INSERT alone is not atomic under concurrency.",
+      "The database must remember enough to answer a retry after the process forgets everything."
+    ],
+    "followUp": "How would the design change if the destination balance lived in another database?",
+    "references": [
+      {
+        "title": "Raft · extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ],
+    "code": "handleTransfer(key, source, destination, amount):\n    // Give transaction-oriented pseudocode.\n    // Include concurrent retry and crash behavior.",
+    "language": "text"
+  },
+  {
+    "id": "distributed-raft-read",
+    "topic": "distributed",
+    "title": "The old leader still answers",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 15,
+    "tags": [
+      "Raft",
+      "Linearizable reads",
+      "Fencing"
+    ],
+    "prompt": "A Raft leader becomes partitioned from a majority but can still serve a client. It has an old committed value and has not yet learned about a newer leader. Why is “read locally because I was elected leader” insufficient for linearizable reads? Describe a quorum-confirmed read approach and the additional assumptions required by a lease-based alternative.",
+    "solution": "An isolated former leader can continue believing it is leader while a majority elects another leader and commits newer writes. A local read may then return a value older than a completed write, violating linearizability. Past election authority is not proof of current authority.\n\nA safe read-index style protocol establishes the leader’s current-term authority with a quorum and waits until the relevant committed index has been applied before serving the read. The leader also needs the protocol’s current-term commitment conditions; merely pinging any nodes is not a proof. Lease reads replace some communication with timing assumptions, requiring carefully bounded clock drift/lease behavior and correct interaction with elections and pauses. An unbounded process pause or unsound lease can restore the stale-leader problem.",
+    "rubric": [
+      "Construct the isolated old-leader/new-majority history.",
+      "Confirm current authority with a quorum and wait for applied state.",
+      "Recognize current-term protocol requirements.",
+      "State timing/election assumptions behind lease alternatives."
+    ],
+    "hints": [
+      "A process cannot directly distinguish a network partition from everyone else being slow.",
+      "A committed log index is not the same as an applied state-machine index."
+    ],
+    "followUp": "Why is a heartbeat sent only before a long read computation not necessarily enough to validate an arbitrary later response?",
+    "references": [
+      {
+        "title": "Raft · extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-fencing",
+    "topic": "distributed",
+    "title": "The lock expired. The old owner did not.",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 22,
+    "tags": [
+      "Leases",
+      "Fencing tokens",
+      "Partial failure"
+    ],
+    "prompt": "Worker A holds a leased lock and begins writing to shared storage. It pauses long enough for the lease to expire. Worker B obtains the lock and starts its work. A resumes and continues writing. Design protection against stale-owner writes. Explain why checking the lease locally before a write is insufficient, and where monotonically increasing fencing tokens must be enforced.",
+    "solution": "A lease expiry does not stop the old process. A local check can become stale between checking and acting, especially across pauses or network delays. Issue a monotonically increasing fencing token when ownership is granted. Every protected storage operation carries the token, and the resource atomically rejects tokens older than the highest accepted epoch for that ownership domain.\n\nEnforcement must live at the side-effect boundary, not only in the lock service or client. Define token scope, persistence across restarts, wrap/monotonicity behavior, and ordering of multi-step operations. B’s higher token prevents later writes from A once the resource advances its fence. If the resource cannot validate tokens, the lease alone does not provide this guarantee; use a transactional/conditional resource API or change the architecture. Idempotency is still needed for repeated operations within one epoch.",
+    "rubric": [
+      "Explain why expired leases do not revoke a paused process’s ability to act.",
+      "Issue monotonically ordered ownership tokens.",
+      "Enforce tokens atomically at the protected resource.",
+      "Discuss persistence, token scope, and within-epoch idempotency."
+    ],
+    "hints": [
+      "The storage system sees writes, not the client’s belief about lock validity.",
+      "Who can reject A after B has become the new owner?"
+    ],
+    "followUp": "How would fencing work when the protected action is sending an email through a provider with no conditional-write API?",
+    "references": [
+      {
+        "title": "Raft · extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-partial-failure",
+    "topic": "distributed",
+    "title": "Silence does not identify the failed component",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Failure detection",
+      "Timeouts"
+    ],
+    "prompt": "A client receives no response from a remote service. List several explanations and explain why the timeout alone cannot distinguish them.",
+    "solution": "The request, response, network path, server, or scheduling could be delayed or failed. The server may also have completed the effect before the response was lost. A timeout bounds the client's waiting, not the remote outcome; recovery must handle uncertainty instead of declaring that nothing happened.",
+    "hints": [
+      "The request and reply travel separately.",
+      "A slow process can resemble a dead one."
+    ],
+    "rubric": [
+      "List multiple failure locations.",
+      "Include completed-but-unacknowledged work.",
+      "Preserve outcome uncertainty."
+    ],
+    "followUp": "What stable request identity would support a safe retry?",
+    "references": [
+      {
+        "title": "AWS Builders Library · timeouts, retries, and backoff with jitter",
+        "url": "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/"
+      }
+    ]
+  },
+  {
+    "id": "distributed-replica-majority",
+    "topic": "distributed",
+    "title": "A majority is more than half",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Quorums",
+      "Replication"
+    ],
+    "prompt": "For a fixed seven-voter majority quorum, how many votes are required and how many unavailable voters can be tolerated while retaining a quorum? Enter the required vote count.",
+    "solution": "4 votes are required, leaving tolerance for 3 unavailable voters. This is quorum availability under the fixed-membership assumptions, not proof that every replication algorithm is safe with any four responses or that surviving nodes have valid state.",
+    "hints": [
+      "Use floor(N/2)+1.",
+      "Distinguish availability arithmetic from protocol correctness."
+    ],
+    "rubric": [
+      "Compute four votes.",
+      "Identify three tolerable absences.",
+      "State fixed-membership protocol assumptions."
+    ],
+    "followUp": "Why can a network partition leave neither side able to progress under a different quorum policy?",
+    "references": [
+      {
+        "title": "Raft extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ],
+    "expected": "4"
+  },
+  {
+    "id": "distributed-linearizable",
+    "topic": "distributed",
+    "title": "One operation takes effect within its interval",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Consistency",
+      "Linearizability"
+    ],
+    "prompt": "Which statement captures linearizability for completed operations on a shared object?",
+    "solution": "Operations can be placed in a single sequential order respecting real-time precedence, with each taking effect between invocation and response. Concurrent operations may be ordered either way if the object's semantics allow it. Linearizability is stronger than merely having all replicas eventually converge.",
+    "hints": [
+      "Respect a response that occurs before the next invocation.",
+      "Overlapping calls are concurrent."
+    ],
+    "rubric": [
+      "Identify a legal sequential order.",
+      "Preserve real-time precedence.",
+      "Distinguish eventual convergence."
+    ],
+    "followUp": "How does this definition treat two overlapping writes?",
+    "references": [
+      {
+        "title": "Jepsen · linearizability",
+        "url": "https://jepsen.io/consistency/models/linearizable"
+      }
+    ],
+    "options": [
+      "All replicas eventually agree, regardless of reads",
+      "Operations appear atomic in a real-time-respecting order",
+      "Every client sees only its own writes",
+      "Messages are delivered in wall-clock timestamp order"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "distributed-eventual-contract",
+    "topic": "distributed",
+    "title": "Convergence says little about the next read",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Eventual consistency",
+      "Replication"
+    ],
+    "prompt": "What does eventual consistency promise under suitable quiescence and delivery assumptions, and what does it not bound?",
+    "solution": "Replicas converge when updates stop and required propagation completes under the model's assumptions. The property alone does not bound staleness, guarantee read-your-writes, or define conflict semantics. A usable API must specify those additional session and resolution behaviors instead of relying on the word eventual.",
+    "hints": [
+      "State the conditions for convergence.",
+      "Ask how long a read may remain stale."
+    ],
+    "rubric": [
+      "Explain conditional convergence.",
+      "Reject an implicit staleness bound.",
+      "Require session and conflict semantics."
+    ],
+    "followUp": "How could an explicit bounded-staleness contract strengthen the API?",
+    "references": [
+      {
+        "title": "Dynamo · versioning, quorums, and anti-entropy",
+        "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-lamport-order",
+    "topic": "distributed",
+    "title": "Causality implies an increasing clock",
+    "difficulty": "Foundation",
+    "format": "multi_select",
+    "minutes": 5,
+    "tags": [
+      "Logical clocks",
+      "Causality"
+    ],
+    "prompt": "Which statements about Lamport logical timestamps are correct?",
+    "solution": "If event A happens before B, its Lamport timestamp is smaller. The converse is not guaranteed: unrelated events can have ordered timestamps. Local increments and receive-side max updates preserve the implication, while a node-ID tiebreaker can define a total order without proving causality.",
+    "hints": [
+      "One implication does not imply its converse.",
+      "Logical time is not elapsed physical time."
+    ],
+    "rubric": [
+      "Preserve happens-before implication.",
+      "Reject causality from timestamp order alone.",
+      "Distinguish logical and physical time."
+    ],
+    "followUp": "What extra information do vector clocks retain?",
+    "references": [
+      {
+        "title": "Lamport · Time, Clocks, and the Ordering of Events",
+        "url": "https://lamport.azurewebsites.net/pubs/time-clocks.pdf"
+      }
+    ],
+    "options": [
+      "A happens-before B implies L(A)<L(B)",
+      "L(A)<L(B) proves A caused B",
+      "Timestamps can order concurrent events",
+      "A logical tick always equals one millisecond"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "distributed-replication-ack",
+    "topic": "distributed",
+    "title": "An acknowledgement needs a durability boundary",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Replication",
+      "Durability"
+    ],
+    "prompt": "A replicated store acknowledges after one node stores an update in RAM. Explain what the word replicated does not establish about surviving a crash.",
+    "solution": "Replication alone does not specify how many copies exist when acknowledged or whether any are durable. A simultaneous or selected failure can lose volatile copies. Define the acknowledgement policy, durable storage boundary, failure model, and recovery behavior rather than assuming a replica count guarantees persistence.",
+    "hints": [
+      "Count durable acknowledged copies, not configured nodes.",
+      "A RAM write can disappear on restart."
+    ],
+    "rubric": [
+      "Specify acknowledgement timing.",
+      "Separate replication from persistence.",
+      "State the failure model."
+    ],
+    "followUp": "How would waiting for durable storage on a majority change the tradeoff?",
+    "references": [
+      {
+        "title": "Raft extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-read-your-writes",
+    "topic": "distributed",
+    "title": "Route the session to evidence of its own write",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Session consistency",
+      "Replication"
+    ],
+    "prompt": "A user updates a profile and immediately reads the old value from a lagging replica. Design a read-your-writes session mechanism.",
+    "solution": "Return a version or commit token with the write and require later session reads to observe at least that point. Wait for replica catch-up or route to an appropriate authority, with bounded failure handling. The token scope must be defined across keys and partitions; sticky routing alone fails if the chosen replica loses the required state.",
+    "hints": [
+      "The read needs a minimum observed version.",
+      "Routing affinity is not the same as a version guarantee."
+    ],
+    "rubric": [
+      "Carry session progress evidence.",
+      "Gate or route reads appropriately.",
+      "Define scope and timeout behavior."
+    ],
+    "followUp": "What should a client do if no reachable replica meets its token?",
+    "references": [
+      {
+        "title": "Raft extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-retry-budget",
+    "topic": "distributed",
+    "title": "A failed dependency should not receive unlimited retries",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Retries",
+      "Overload"
+    ],
+    "prompt": "Design retries for an overloaded dependency shared by many clients. Include timing, total effort, and which operations may be replayed.",
+    "solution": "Retry only classified transient failures for operations with safe retry semantics. Use bounded attempts within an overall deadline, exponential backoff with jitter, and a shared effort budget or admission control. Respect server feedback and stop when recovery is unlikely; coordinated immediate retries amplify overload.",
+    "hints": [
+      "A retry is additional offered load.",
+      "Backoff without a cap still permits excessive effort."
+    ],
+    "rubric": [
+      "Check retry safety.",
+      "Bound deadline and attempts.",
+      "Add jitter and overload-aware admission."
+    ],
+    "followUp": "Why should multiple service layers coordinate their retry budgets?",
+    "references": [
+      {
+        "title": "AWS Builders Library · timeouts, retries, and backoff with jitter",
+        "url": "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/"
+      }
+    ]
+  },
+  {
+    "id": "distributed-quorum-read-version",
+    "topic": "distributed",
+    "title": "A quorum response needs a value-selection rule",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Quorums",
+      "Versioning"
+    ],
+    "prompt": "In a toy leaderless store, writes reach W replicas and reads consult R with R+W>N. Why is this inequality alone insufficient to define a correct read result?",
+    "solution": "It guarantees intersection under the stated fixed replica sets, but the reader still needs version ordering and conflict resolution, and the protocol must handle concurrent writes and partial outcomes. Sloppy quorums, membership changes, or stale metadata can invalidate assumptions. Intersection is a building block, not a complete consistency proof.",
+    "hints": [
+      "An intersecting replica may return several versions.",
+      "The inequality says nothing about choosing among them."
+    ],
+    "rubric": [
+      "Explain intersection.",
+      "Require version and concurrency rules.",
+      "State replica-set assumptions."
+    ],
+    "followUp": "How do tombstones participate in version comparison?",
+    "references": [
+      {
+        "title": "Dynamo · versioning, quorums, and anti-entropy",
+        "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-vector-concurrent",
+    "topic": "distributed",
+    "title": "Two clocks can be incomparable",
+    "difficulty": "Intermediate",
+    "format": "choice",
+    "minutes": 8,
+    "tags": [
+      "Vector clocks",
+      "Causality"
+    ],
+    "prompt": "For vector clocks A=[2,1] and B=[1,2], with componentwise comparison, what is their causal relationship?",
+    "solution": "They are incomparable: A is larger in the first component and smaller in the second, so neither is componentwise less than or equal to the other. Under the clock model this indicates concurrent versions, not an ordering by sum or lexicographic comparison.",
+    "hints": [
+      "Compare each component.",
+      "Neither vector dominates the other."
+    ],
+    "rubric": [
+      "Identify opposing component inequalities.",
+      "Conclude concurrency.",
+      "Reject sum-based causal order."
+    ],
+    "followUp": "What would a componentwise merge of these clocks be?",
+    "references": [
+      {
+        "title": "Dynamo · versioning, quorums, and anti-entropy",
+        "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf"
+      }
+    ],
+    "options": [
+      "A strictly precedes B",
+      "B strictly precedes A",
+      "They are concurrent",
+      "They are identical"
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "distributed-anti-entropy",
+    "topic": "distributed",
+    "title": "Repair the replica that missed the write",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Replication",
+      "Anti-entropy"
+    ],
+    "prompt": "A replica returns after being offline and has missed many writes and deletes. Design background repair without treating absence as proof of deletion.",
+    "solution": "Compare versioned state using a suitable digest or range protocol, fetch differing records, and reconcile according to the store's conflict rules. Propagate deletion evidence with an adequate retention policy. Bound repair traffic and observe convergence; an absent record may simply be a never-received update.",
+    "hints": [
+      "Missing data has several causes.",
+      "Deletes need versioned evidence too."
+    ],
+    "rubric": [
+      "Compare versioned ranges.",
+      "Include deletion state.",
+      "Bound and monitor repair work."
+    ],
+    "followUp": "Why can deleting tombstones before offline replicas recover resurrect old values?",
+    "references": [
+      {
+        "title": "Dynamo · versioning, quorums, and anti-entropy",
+        "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-raft-term",
+    "topic": "distributed",
+    "title": "A newer term invalidates stale authority",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Raft",
+      "Leader election"
+    ],
+    "prompt": "In Raft, a server receives a valid RPC carrying a higher term than its current term. What changes, and why does the term need persistent handling?",
+    "solution": "It updates its current term and steps down to follower as required by the protocol, preserving the relevant persistent term and vote state. Terms distinguish election epochs and prevent stale authority from being treated as current. A term number is not a lease proving leadership forever without quorum contact.",
+    "hints": [
+      "Election epochs are monotonically observed.",
+      "A restarted node must not forget a vote or term."
+    ],
+    "rubric": [
+      "Adopt the higher term.",
+      "Step down appropriately.",
+      "Persist protocol state and reject perpetual authority."
+    ],
+    "followUp": "Why can randomized election timeouts improve liveness without changing safety?",
+    "references": [
+      {
+        "title": "Raft extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-membership-joint",
+    "topic": "distributed",
+    "title": "Two configurations need a safe overlap",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Raft",
+      "Membership"
+    ],
+    "prompt": "Why can replacing an entire voting set in one step permit two disjoint majorities, and how does joint consensus address the transition?",
+    "solution": "Old and new configurations can each form a majority without sharing a voter. Joint consensus requires decisions to satisfy both old and new majorities during the transition, preserving overlap before committing the final configuration. Membership changes must follow the protocol rather than merely editing a list in every process.",
+    "hints": [
+      "Compare the two majority sets.",
+      "The transition itself needs quorum rules."
+    ],
+    "rubric": [
+      "Identify disjoint-majority risk.",
+      "Require both configurations in the joint phase.",
+      "Commit transition through the protocol."
+    ],
+    "followUp": "How can adding a slow replica affect availability during reconfiguration?",
+    "references": [
+      {
+        "title": "Raft extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-fanout-tail",
+    "topic": "distributed",
+    "title": "Many fast dependencies make one slow request",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Tail latency",
+      "Fan-out"
+    ],
+    "prompt": "A request waits for all 100 independent dependencies. Each meets a latency threshold with probability 0.99. What is the probability all meet it, rounded to six decimal places?",
+    "solution": "0.366032, from 0.99^100. Independence is a strong assumption; correlated failures can change the result. Waiting for all dependencies amplifies per-dependency tail risk, so measure fan-out and consider whether every result is required.",
+    "hints": [
+      "All events must succeed together.",
+      "Multiply independent probabilities."
+    ],
+    "rubric": [
+      "Compute approximately 0.366032.",
+      "State independence.",
+      "Explain all-of fan-out tail amplification."
+    ],
+    "followUp": "What changes if the request only needs any 95 successful results?",
+    "references": [
+      {
+        "title": "Google · The Tail at Scale",
+        "url": "https://research.google/pubs/the-tail-at-scale/"
+      }
+    ],
+    "expected": "0.366032"
+  },
+  {
+    "id": "distributed-commit-current-term",
+    "topic": "distributed",
+    "title": "A replicated old entry needs the Raft commit rule",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Raft",
+      "Commit safety"
+    ],
+    "prompt": "Why does Raft's leader not declare an older-term log entry committed solely by counting that it exists on a majority?",
+    "solution": "The protocol restricts direct majority-based commitment to entries from the leader's current term. Once such an entry commits, preceding entries become committed as part of the log prefix. This rule prevents unsafe conclusions from older entries that may have appeared on different majorities across terms.",
+    "hints": [
+      "Track the term of the entry, not just the leader.",
+      "Commitment of a prefix follows a current-term commitment."
+    ],
+    "rubric": [
+      "State the current-term restriction.",
+      "Explain prefix commitment.",
+      "Relate the rule to cross-term safety."
+    ],
+    "followUp": "Why is a current-term no-op useful after election?",
+    "references": [
+      {
+        "title": "Raft extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-snapshot-log",
+    "topic": "distributed",
+    "title": "Compaction must preserve the committed boundary",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Raft",
+      "Snapshots"
+    ],
+    "prompt": "Design snapshot metadata and installation for a replicated state machine whose old log entries are compacted.",
+    "solution": "Record the last included log index and term with a consistent applied-state snapshot and required configuration metadata. Install atomically according to the protocol and retain or discard log suffixes based on matching boundaries. A state image without its log position cannot safely determine what to replay next.",
+    "hints": [
+      "State and replay position form one recovery boundary.",
+      "A suffix may or may not match the snapshot's history."
+    ],
+    "rubric": [
+      "Capture consistent state and boundary.",
+      "Include membership metadata.",
+      "Reconcile suffixes during atomic installation."
+    ],
+    "followUp": "What failure injection would test a crash halfway through snapshot installation?",
+    "references": [
+      {
+        "title": "Raft extended paper",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-crdt-counter",
+    "topic": "distributed",
+    "title": "Convergence requires a merge algebra",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "CRDTs",
+      "Convergence"
+    ],
+    "prompt": "Explain how a grow-only counter CRDT with one component per replica merges concurrent increments without losing them. State its limitations.",
+    "solution": "Each replica increments its own nonnegative component; merge takes the componentwise maximum and the value is the sum. The merge is associative, commutative, and idempotent, so repeated and reordered delivery converges under the model. Decrements and arbitrary cross-field invariants require another design.",
+    "hints": [
+      "A scalar maximum would lose increments from other replicas.",
+      "Each component tracks one writer's progress."
+    ],
+    "rubric": [
+      "Define per-replica increments.",
+      "Use componentwise maximum and sum.",
+      "State supported operations and invariant limits."
+    ],
+    "followUp": "How does a PN-counter extend this approach to decrements?",
+    "references": [
+      {
+        "title": "Shapiro et al. · convergent and commutative replicated data types",
+        "url": "https://www.lip6.fr/Marc.Shapiro/papers/2011/Comprehensive-CRDTs-RR7506-2011-01.pdf"
+      }
+    ]
+  },
+  {
+    "id": "distributed-dedupe-retention",
+    "topic": "distributed",
+    "title": "Exactly once has an expiry date",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Idempotency",
+      "Retention"
+    ],
+    "prompt": "A service deletes idempotency records after 24 hours. A delayed client retries a successful request after 48 hours. Define the possible result and a clearer API contract.",
+    "solution": "Without retained evidence the retry can be treated as new and repeat the effect. Specify the deduplication scope and retention window, and either reject too-old identities, retain stronger durable business uniqueness, or accept documented repeat risk. Store outcome and effect atomically where possible; a TTL is part of semantics, not merely cleanup.",
+    "hints": [
+      "The server may no longer remember the request.",
+      "A logical business key can outlive a request cache."
+    ],
+    "rubric": [
+      "Identify post-expiry duplication.",
+      "Specify retention and identity scope.",
+      "Define rejection or durable uniqueness policy."
+    ],
+    "followUp": "How would a retry with the same key but different payload be handled?",
+    "references": [
+      {
+        "title": "AWS Builders Library · safe retries with idempotent APIs",
+        "url": "https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/"
+      }
+    ]
+  },
+  {
+    "id": "distributed-saga-compensation",
+    "topic": "distributed",
+    "title": "An undo action may fail too",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Sagas",
+      "Workflows"
+    ],
+    "prompt": "Design a saga for a workflow spanning independent services. Explain why compensation is not equivalent to rolling back one ACID transaction.",
+    "solution": "Persist workflow steps and stable operation identities, make actions and compensations repeat-safe, and define retries and manual escalation. A compensation is a new business action that can fail or only partially offset an earlier effect; other observers may already have seen it. Record progress durably and specify irreversible steps and allowed final states.",
+    "hints": [
+      "External effects can escape before compensation starts.",
+      "Compensation needs its own recovery path."
+    ],
+    "rubric": [
+      "Persist step state and identities.",
+      "Make actions and compensation idempotent.",
+      "Define failures, irreversible effects, and escalation."
+    ],
+    "followUp": "When should an irreversible step be delayed until the end?",
+    "references": [
+      {
+        "title": "Microsoft · compensating transaction pattern",
+        "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/compensating-transaction"
+      }
+    ]
+  },
+  {
+    "id": "distributed-split-brain-clock",
+    "topic": "distributed",
+    "title": "A wall-clock lease needs bounded assumptions",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Leases",
+      "Clock uncertainty"
+    ],
+    "prompt": "Explain why a lease based on local wall clocks needs explicit drift and pause assumptions before it can protect exclusive work.",
+    "solution": "Clock drift, clock steps, network delay, and process pauses can cause a client to act after the authority considers its lease expired. Correct lease protocols account for timing uncertainty and enforce a safe validity interval; downstream fencing can reject stale actions. A timestamp comparison alone does not establish exclusivity.",
+    "hints": [
+      "The client and authority observe time differently.",
+      "A paused client can resume with obsolete beliefs."
+    ],
+    "rubric": [
+      "Identify timing and pause hazards.",
+      "Require bounded validity assumptions.",
+      "Enforce stale-action rejection where needed."
+    ],
+    "followUp": "Why can a monotonic local clock solve clock steps without solving unbounded process pauses?",
+    "references": [
+      {
+        "title": "The Chubby lock service · leases and stale clients",
+        "url": "https://research.google/pubs/the-chubby-lock-service-for-loosely-coupled-distributed-systems/"
+      }
+    ]
+  },
+  {
+    "id": "distributed-shard-move",
+    "topic": "distributed",
+    "title": "A live shard needs one ownership story",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Sharding",
+      "Migration"
+    ],
+    "prompt": "Design a shard migration while reads and writes continue. Include snapshot copying, changes after the snapshot, and cutover authority.",
+    "solution": "Copy a consistent snapshot, stream subsequent changes to a known position, and establish an enforced ownership epoch or routing boundary for cutover. Prevent old and new owners from accepting conflicting writes, handle retries with stable identities, and retain a rollback or forward-recovery plan. A bulk copy alone misses concurrent updates.",
+    "hints": [
+      "The source can change during copying.",
+      "Cutover must transfer authority, not just traffic."
+    ],
+    "rubric": [
+      "Combine snapshot and change catch-up.",
+      "Enforce ownership during cutover.",
+      "Handle retries and recovery."
+    ],
+    "followUp": "How would a stale router discover that its ownership epoch is obsolete?",
+    "references": [
+      {
+        "title": "Spanner · distributed ownership and transactions",
+        "url": "https://research.google/pubs/spanner-googles-globally-distributed-database/"
+      }
+    ]
+  },
+  {
+    "id": "distributed-geo-consensus",
+    "topic": "distributed",
+    "title": "Distance sets a latency floor",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Geo-replication",
+      "Consensus"
+    ],
+    "prompt": "Design a multi-region strongly consistent service. Explain why a low-latency local read strategy and a low-latency global write strategy require different proofs.",
+    "solution": "Writes must obtain the protocol's required remote agreement or durability, introducing network-distance cost for the selected failure model. Local reads need a valid lease, safe read index, or another proof of freshness; a nearby replica is not inherently current. Choose placement, consistency, and failure objectives together and measure regional outcomes.",
+    "hints": [
+      "Nearest is not necessarily authoritative.",
+      "Failure tolerance determines which regions must participate."
+    ],
+    "rubric": [
+      "Relate write latency to quorum placement.",
+      "Prove local-read freshness.",
+      "Evaluate regional failure and latency objectives."
+    ],
+    "followUp": "What availability tradeoff appears when the local region loses contact with the quorum?",
+    "references": [
+      {
+        "title": "Spanner · replication and global transactions",
+        "url": "https://research.google/pubs/spanner-googles-globally-distributed-database/"
+      }
+    ]
+  },
+  {
+    "id": "distributed-history-checker",
+    "topic": "distributed",
+    "title": "Test outcomes against a consistency model",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Testing",
+      "Linearizability"
+    ],
+    "prompt": "Design a fault test for a concurrent key-value store claiming linearizability. What must the recorded history contain, and what does a passing test establish?",
+    "solution": "Record invocation and response intervals, operation inputs and outcomes, and ambiguous calls while injecting partitions, pauses, and crashes. Check histories against the specified object semantics with a sound model. Passing covers only explored executions and modeled behavior; preserve minimized failing histories and avoid treating test success as a complete proof.",
+    "hints": [
+      "Real-time precedence needs operation intervals.",
+      "Timeouts may have uncertain completion."
+    ],
+    "rubric": [
+      "Record complete operation histories.",
+      "Inject relevant faults and check a precise model.",
+      "State coverage limits and minimize failures."
+    ],
+    "followUp": "How should a checker represent a timed-out write that may have committed?",
+    "references": [
+      {
+        "title": "Jepsen · history checking and fault testing",
+        "url": "https://github.com/jepsen-io/jepsen"
+      }
+    ]
+  },
+  {
+    "id": "distributed-event-time-watermark",
+    "topic": "distributed",
+    "title": "A watermark is a lateness policy, not certainty",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Streaming",
+      "Event time"
+    ],
+    "prompt": "Design event-time aggregation across delayed and reordered producers. Explain what a watermark means and how events arriving after it should be handled.",
+    "solution": "Define event-time extraction, per-source progress assumptions, and a watermark policy estimating when windows may close. Specify allowed lateness, corrections or retractions, and a late-event path rather than silently dropping evidence. A watermark is justified by assumptions and policy, not proof that no earlier event can ever arrive.",
+    "hints": [
+      "Processing order differs from event time.",
+      "Late events require an explicit outcome."
+    ],
+    "rubric": [
+      "Define progress and watermark assumptions.",
+      "Specify late-event and correction behavior.",
+      "Observe lag and source failures."
+    ],
+    "followUp": "How can one idle partition prevent watermark progress without an idleness policy?",
+    "references": [
+      {
+        "title": "Apache Beam · watermarks and late data",
+        "url": "https://beam.apache.org/documentation/programming-guide/#watermarks-and-late-data"
+      }
+    ]
+  }
+]

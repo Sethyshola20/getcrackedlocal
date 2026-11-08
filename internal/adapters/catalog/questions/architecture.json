@@ -1,0 +1,944 @@
+[
+  {
+    "id": "architecture-line",
+    "topic": "architecture",
+    "title": "Two variables fighting over one line",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Caches",
+      "Coherence"
+    ],
+    "prompt": "Core A repeatedly writes x; core B repeatedly writes y. x and y are independent variables but occupy the same coherence line. There is no logical sharing. What best explains a large throughput loss compared with placing them on separate lines?",
+    "solution": "This is false sharing. Coherence normally tracks ownership at cache-line granularity, not at the source-language variable boundary. Writes to different words in the same line can force ownership to move between cores. The data can be race-free and still trigger heavy coherence traffic.\n\nSeparate the independently written hot data with appropriate alignment and spacing, or aggregate locally if delayed visibility is acceptable. Measure on the target platform: coherence-line size, topology, and write frequency affect the result. More padding also increases memory footprint and can hurt cache and TLB locality elsewhere.",
+    "rubric": [
+      "Identify cache-line granularity as the source of interference.",
+      "Distinguish false sharing from logical data sharing or races.",
+      "Explain a placement repair and its footprint tradeoff."
+    ],
+    "hints": [
+      "The hardware does not know where one C++ or Go variable ends semantically.",
+      "A write needs ownership of the whole coherence unit."
+    ],
+    "followUp": "Why can two read-only variables sharing the same line be beneficial instead?",
+    "references": [
+      {
+        "title": "Intel · architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "options": [
+      "The branch predictor cannot distinguish x from y.",
+      "False sharing causes repeated line ownership transfers.",
+      "The compiler must serialize every independent variable.",
+      "Both cores necessarily execute on the same logical CPU."
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "architecture-sets",
+    "topic": "architecture",
+    "title": "Nine lines, eight places",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Cache sets",
+      "Associativity"
+    ],
+    "prompt": "Consider a simplified 32 KiB, 8-way, 64-byte-line L1 data cache with 64 sets and conventional indexing `(address / 64) mod 64`. Nine addresses are 4,096 bytes apart and accessed in a repeating cycle. Ignore prefetching and other accesses; use true LRU replacement. In steady state, how many of the nine accesses per cycle miss?",
+    "solution": "All nine addresses map to the same set because 4,096 bytes is 64 cache lines, so each stride leaves the set index unchanged. That set has only eight ways. Under a repeating cycle of nine distinct lines with true LRU, each next line has already been evicted, yielding 9 misses per cycle.\n\nThe total data touched is only 576 bytes, far below total cache capacity. This is a conflict problem rather than a capacity problem. Real caches may use different indexing or replacement policies, so the numerical conclusion belongs to the stated model.",
+    "rubric": [
+      "Derive that a 4 KiB stride preserves the set index.",
+      "Compare nine distinct lines with eight ways.",
+      "Use cyclic true-LRU behavior rather than total cache capacity."
+    ],
+    "hints": [
+      "Compute 4,096 / 64 modulo 64.",
+      "After eight other distinct lines, is the next requested line still among the eight most recent?"
+    ],
+    "followUp": "What changes if the stride is 4,160 bytes instead?",
+    "references": [
+      {
+        "title": "Intel · architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "9"
+  },
+  {
+    "id": "architecture-litmus",
+    "topic": "architecture",
+    "title": "Can both cores read zero?",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 10,
+    "tags": [
+      "Store buffers",
+      "Memory ordering"
+    ],
+    "prompt": "Two atomic integers x and y start at zero. Thread 0 relaxed-stores x=1 then relaxed-loads y into r0. Thread 1 relaxed-stores y=1 then relaxed-loads x into r1. Explain whether r0=r1=0 is allowed by the C++ memory model and how store buffers give hardware intuition. State a straightforward language-level change that forbids this outcome.",
+    "solution": "Both reads observing zero is allowed with relaxed atomics. Each variable has atomic accesses and a modification order, but there is no cross-thread synchronization requiring either load to observe the other thread’s store. Store buffers provide intuition: each core’s store can remain buffered while its subsequent load reads the other location’s old value.\n\nUsing sequentially consistent operations for all four accesses forbids the all-zero outcome through the single SC order and each thread’s ordering constraints. Merely changing the stores to release and loads to acquire does not suffice if both loads still read the initial zero: neither acquire observes the other release. Use language-level ordering guarantees rather than relying on one CPU’s apparent strength.",
+    "rubric": [
+      "State that relaxed atomics allow the all-zero outcome without a data race.",
+      "Explain store-buffer intuition without substituting it for the language model.",
+      "Explain why all-SC forbids it and release/acquire may still allow it."
+    ],
+    "hints": [
+      "An acquire load does not synchronize with a release it did not observe.",
+      "Try arranging all four operations in one order while preserving both thread orders."
+    ],
+    "followUp": "Can you forbid this outcome with fences while keeping the individual atomic operations relaxed?",
+    "references": [
+      {
+        "title": "Intel · architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "code": "// initially x = y = 0\n// Thread 0                 // Thread 1\nx.store(1, relaxed);        y.store(1, relaxed);\nr0 = y.load(relaxed);       r1 = x.load(relaxed);",
+    "language": "cpp"
+  },
+  {
+    "id": "architecture-pointer-chase",
+    "topic": "architecture",
+    "title": "Same bytes, very different bandwidth",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Memory-level parallelism",
+      "Prefetch"
+    ],
+    "prompt": "A sequential array scan and a randomly permuted linked-list traversal read the same number of cache lines from DRAM. The scan is much faster. Explain why equal byte counts do not imply equal runtime. Discuss dependency chains, memory-level parallelism, prefetchability, and how interleaving independent pointer chains changes the experiment.",
+    "solution": "A sequential scan exposes many future addresses independently. Hardware prefetchers can detect the pattern, and out-of-order execution can keep multiple cache misses in flight. Throughput can approach a bandwidth limit. In a pointer chain, the next address depends on the current load’s result, serializing misses. It may become latency-bound even while using only a small fraction of peak memory bandwidth.\n\nInterleaving several independent chains can expose parallel misses and increase throughput until miss-handling resources or bandwidth become limiting. The result still depends on cache residency, TLB behavior, NUMA placement, and line utilization. Separate dependent-load latency from streaming bandwidth benchmarks, and ensure the compiler cannot eliminate the traversal.",
+    "rubric": [
+      "Identify the address dependency that serializes pointer chasing.",
+      "Connect independent addresses to prefetching and multiple outstanding misses.",
+      "Explain how multiple chains expose parallelism and identify remaining limits."
+    ],
+    "hints": [
+      "Can the CPU calculate the address of load n+1 before load n finishes?",
+      "Bandwidth is useful only when enough independent work can keep the memory system busy."
+    ],
+    "followUp": "Why might a structure-of-arrays representation improve a selective scan even if total object size is unchanged?",
+    "references": [
+      {
+        "title": "Intel · architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-tlb",
+    "topic": "architecture",
+    "title": "Your cache hit still needs an address",
+    "difficulty": "Advanced",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "TLB",
+      "Huge pages"
+    ],
+    "prompt": "A simplified data TLB holds 64 translations for 4 KiB pages. A separate configuration instead holds 32 translations for 2 MiB pages. Ignore associativity conflicts, other TLB levels, and mixed page sizes. How many times larger is the second configuration’s **translation reach**? Enter the ratio.",
+    "solution": "The base-page reach is `64 × 4 KiB = 256 KiB`. The large-page reach is `32 × 2 MiB = 64 MiB`. The ratio is `64 MiB / 256 KiB = 256`.\n\nTranslation reach is the amount of mapped address space these entries can cover, not cache capacity. Larger pages may reduce translation misses while increasing internal fragmentation, allocation constraints, or fault and compaction costs. Actual TLB structures differ by page size and processor, so both entry counts are explicit assumptions here.",
+    "rubric": [
+      "Compute reach as entry count times page size.",
+      "Use consistent binary units.",
+      "Distinguish translation reach from data-cache capacity."
+    ],
+    "hints": [
+      "2 MiB is 512 times 4 KiB.",
+      "The large-page configuration has half as many entries."
+    ],
+    "followUp": "Why might enabling transparent huge pages worsen p99 even when TLB miss counts fall?",
+    "references": [
+      {
+        "title": "Linux kernel · transparent huge pages",
+        "url": "https://docs.kernel.org/admin-guide/mm/transhuge.html"
+      }
+    ],
+    "expected": "256"
+  },
+  {
+    "id": "architecture-roofline",
+    "topic": "architecture",
+    "title": "Faster arithmetic, unchanged runtime",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Roofline",
+      "Arithmetic intensity",
+      "Profiling"
+    ],
+    "prompt": "A kernel streams two large float arrays and writes a third: `out[i] = a[i] * scale + b[i]`. Replacing scalar arithmetic with wider SIMD barely improves runtime. Develop a performance model and an investigation. Include arithmetic intensity, write allocation, cache residency, vectorization evidence, memory bandwidth, and when non-temporal stores might help or hurt.",
+    "solution": "Count arithmetic work and bytes at the relevant memory level. Each element has roughly two floating-point operations and at least two four-byte reads plus one four-byte write, before considering write-allocate traffic. This low arithmetic intensity can make DRAM bandwidth the limiting resource. Wider arithmetic cannot exceed a byte-supply ceiling once enough independent accesses already saturate it.\n\nMeasure achieved bandwidth, working-set dependence, hardware counters, and compiler output to confirm vectorization and the actual bottleneck. Cold write-allocate output can add read-for-ownership traffic; full-line non-temporal stores may reduce that for large outputs that are not immediately reused. They impose alignment, ordering, and cache-use tradeoffs and may be worse when the next stage needs the output resident. Check NUMA placement, page faults, aliasing assumptions, and frequency changes before attributing every flat result to bandwidth.",
+    "rubric": [
+      "Model both operations and memory traffic, including possible write allocation.",
+      "Explain the arithmetic-intensity bandwidth ceiling.",
+      "Verify generated code, bandwidth, and working-set behavior.",
+      "Discuss non-temporal store applicability and immediate-reuse tradeoffs."
+    ],
+    "hints": [
+      "How many bytes must arrive for each multiply-add?",
+      "The bottleneck can move between cache levels and DRAM as the working set grows."
+    ],
+    "followUp": "How would fusing a second computation over out change arithmetic intensity and memory traffic?",
+    "references": [
+      {
+        "title": "Intel · architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "code": "for (size_t i = 0; i < n; ++i) {\n    out[i] = a[i] * scale + b[i];\n}",
+    "language": "cpp"
+  },
+  {
+    "id": "architecture-cache-hierarchy",
+    "topic": "architecture",
+    "title": "A cache hit avoids the longer path",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Caches",
+      "Locality"
+    ],
+    "prompt": "Explain why a small repeatedly accessed working set can run faster than a much larger one even when both perform the same number of arithmetic operations.",
+    "solution": "A small working set may remain in low-latency caches, while a larger one incurs more misses and accesses slower cache levels or memory. Temporal and spatial locality determine reuse. Equal arithmetic counts do not imply equal data-access cost, and footprint alone does not guarantee a specific hit rate.",
+    "hints": [
+      "Count data movement as well as operations.",
+      "Reuse distance matters."
+    ],
+    "rubric": [
+      "Explain hierarchy latency.",
+      "Identify locality and reuse.",
+      "Avoid inferring exact hit rate from size alone."
+    ],
+    "followUp": "How can access order change performance without changing the working-set size?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-line-offset",
+    "topic": "architecture",
+    "title": "Separate a line number from its offset",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Caches",
+      "Addressing"
+    ],
+    "prompt": "With 64-byte cache lines, what is the byte offset within a line for byte address 130?",
+    "solution": "2, because 130 mod 64=2. The line begins at address 128. This calculation concerns line alignment, not the set index or the physical location of the data in a particular cache.",
+    "hints": [
+      "Use the address modulo line size.",
+      "128 is divisible by 64."
+    ],
+    "rubric": [
+      "Compute offset two.",
+      "Identify aligned base 128.",
+      "Separate offset from cache placement."
+    ],
+    "followUp": "How many low address bits represent the offset?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "2"
+  },
+  {
+    "id": "architecture-endianness",
+    "topic": "architecture",
+    "title": "The bytes are the same, the number differs",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Endianness",
+      "Representation"
+    ],
+    "prompt": "The bytes at increasing addresses are 0x78, 0x56, 0x34, 0x12. What unsigned 32-bit value do they represent under little-endian interpretation?",
+    "solution": "0x12345678. Little-endian storage places the least-significant byte at the lowest address. Endianness describes byte order within a multibyte representation, not the order of bits printed inside a byte or a network protocol's independent contract.",
+    "hints": [
+      "Start with the least-significant byte.",
+      "The highest-address byte carries the highest place value."
+    ],
+    "rubric": [
+      "Choose 0x12345678.",
+      "Explain byte significance.",
+      "Distinguish byte order from bit notation."
+    ],
+    "followUp": "What value would a big-endian interpretation produce?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "options": [
+      "0x78563412",
+      "0x12345678",
+      "0x87654321",
+      "0x21436587"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "architecture-pipeline-latency",
+    "topic": "architecture",
+    "title": "Throughput is not one-operation latency",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Pipelines",
+      "Throughput"
+    ],
+    "prompt": "A toy pipeline has four one-cycle stages and accepts one new operation each cycle without stalls. Explain its latency and steady-state throughput.",
+    "solution": "Each operation takes four cycles from entry through completion, while the filled pipeline completes one operation per cycle. Pipelining overlaps different operations rather than reducing the number of stages traversed by one. Dependencies, hazards, and stalls can reduce realized throughput.",
+    "hints": [
+      "Follow one operation, then several overlapping operations.",
+      "Include the fill period."
+    ],
+    "rubric": [
+      "Identify four-cycle latency.",
+      "Identify one-per-cycle steady throughput.",
+      "State the no-stall assumption."
+    ],
+    "followUp": "How many cycles complete five operations in this model?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-branch-predictor",
+    "topic": "architecture",
+    "title": "A predicted path can be discarded",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Branches",
+      "Speculation"
+    ],
+    "prompt": "What happens architecturally when a processor discovers that a speculatively executed branch path was wrong?",
+    "solution": "The processor discards uncommitted architectural results from that path and resumes the correct path, paying recovery cost. Microarchitectural effects such as cache changes may remain. Speculation does not permit an incorrect branch to commit arbitrary register or memory results as valid program execution.",
+    "hints": [
+      "Separate architectural state from microarchitectural traces.",
+      "Incorrect work can still consume resources."
+    ],
+    "rubric": [
+      "Describe recovery.",
+      "Discard incorrect architectural results.",
+      "Retain possible microarchitectural effects."
+    ],
+    "followUp": "Why can branch misprediction matter more in a dependency-heavy loop?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "options": [
+      "It commits both paths",
+      "It discards wrong-path architectural work and recovers",
+      "It always restarts the process",
+      "It guarantees the cache is reset"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "architecture-simd-width",
+    "topic": "architecture",
+    "title": "Count lanes rather than instructions",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "SIMD",
+      "Vectorization"
+    ],
+    "prompt": "How many 32-bit elements fit in a 256-bit vector register, ignoring masks and packing overhead?",
+    "solution": "8, because 256/32=8. This is lane capacity, not a promise of an eightfold application speedup. Data layout, dependency chains, memory bandwidth, and supported operations determine realized gains.",
+    "hints": [
+      "Divide register width by element width.",
+      "Capacity and speedup are separate."
+    ],
+    "rubric": [
+      "Compute eight lanes.",
+      "Keep units in bits.",
+      "Reject guaranteed eightfold speedup."
+    ],
+    "followUp": "How many 64-bit elements fit in the same register width?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "8"
+  },
+  {
+    "id": "architecture-amat",
+    "topic": "architecture",
+    "title": "A miss penalty changes the average",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Caches",
+      "AMAT"
+    ],
+    "prompt": "A toy cache has a 2 ns hit time, a 5% miss rate, and an additional 80 ns penalty per miss. What is average memory access time in nanoseconds?",
+    "solution": "6 ns, using 2+0.05×80. The penalty is additional to the hit lookup, so do not replace the miss path with 80 total. This serial average model omits overlapping requests, write behavior, and multiple cache levels.",
+    "hints": [
+      "Use hit time plus miss rate times additional penalty.",
+      "Five percent is 0.05."
+    ],
+    "rubric": [
+      "Compute six nanoseconds.",
+      "Interpret the additional penalty.",
+      "State the simplified model."
+    ],
+    "followUp": "What miss rate would produce an AMAT of 10 ns under the same costs?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "6"
+  },
+  {
+    "id": "architecture-associativity",
+    "topic": "architecture",
+    "title": "A set has a limited number of residents",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Caches",
+      "Associativity"
+    ],
+    "prompt": "Explain the difference between capacity misses and conflict misses. Why can addresses mapping to one set miss despite unused capacity elsewhere?",
+    "solution": "Capacity misses arise when the useful working set exceeds effective cache capacity. Conflict misses arise because too many simultaneously needed lines compete for a limited-associativity set. Other sets cannot store those lines under that mapping, so total free capacity does not prevent eviction from the overloaded set.",
+    "hints": [
+      "Placement rules partition capacity.",
+      "A line cannot occupy every set."
+    ],
+    "rubric": [
+      "Define capacity misses.",
+      "Define conflict misses.",
+      "Explain unused capacity in other sets."
+    ],
+    "followUp": "How might changing stride or padding reduce set conflicts?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-store-buffer",
+    "topic": "architecture",
+    "title": "A completed store need not be globally observed yet",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Store buffers",
+      "Memory ordering"
+    ],
+    "prompt": "Explain the purpose of a store buffer and why another core may not immediately observe a store when the issuing core has moved to later instructions.",
+    "solution": "A store buffer lets execution proceed while writes await cache-coherence and memory-system handling. Visibility to other cores follows the architecture's ordering rules rather than simple source instruction completion. Use language-level synchronization with the required ordering; do not infer a cross-thread guarantee from one core's progress.",
+    "hints": [
+      "Execution progress and global observation differ.",
+      "The compiler also follows a language memory model."
+    ],
+    "rubric": [
+      "Explain buffering.",
+      "Distinguish local completion from visibility.",
+      "Require appropriate synchronization."
+    ],
+    "followUp": "How can store-to-load forwarding benefit the issuing core?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-prefetch-stride",
+    "topic": "architecture",
+    "title": "Predictability helps the memory subsystem",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Prefetching",
+      "Memory access"
+    ],
+    "prompt": "Why may sequential array traversal outperform an equally sized randomly linked traversal, even when both eventually read every element?",
+    "solution": "Sequential access provides spatial locality and predictable future addresses, allowing prefetching and overlapping memory requests. Random pointer traversal can require one load's result before finding the next address, reducing memory-level parallelism. Equal bytes read do not imply equal latency hiding or useful cache-line utilization.",
+    "hints": [
+      "Ask when the next address becomes known.",
+      "One cache line contains multiple nearby elements."
+    ],
+    "rubric": [
+      "Explain spatial locality.",
+      "Explain prediction and overlap.",
+      "Identify dependent address generation."
+    ],
+    "followUp": "When could software prefetching fail to help pointer traversal?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-page-coverage",
+    "topic": "architecture",
+    "title": "A TLB entry covers an address range",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "TLB",
+      "Pages"
+    ],
+    "prompt": "In a toy fully associative TLB with 128 entries and 4 KiB pages, what memory range can be covered simultaneously, in KiB, ignoring shared entries and access-pattern effects?",
+    "solution": "512 KiB, from 128×4 KiB. This is nominal translation coverage, not cache capacity or guaranteed hit rate. Real TLBs can have separate structures, set conflicts, and mixed page sizes.",
+    "hints": [
+      "Multiply entries by page size.",
+      "Keep the result in KiB."
+    ],
+    "rubric": [
+      "Compute 512 KiB.",
+      "Distinguish translation coverage from data storage.",
+      "State the simplified assumptions."
+    ],
+    "followUp": "What coverage would 2 MiB pages provide for the same entry count?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "512"
+  },
+  {
+    "id": "architecture-aos-soa",
+    "topic": "architecture",
+    "title": "Unused fields still travel in cache lines",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Data layout",
+      "SIMD"
+    ],
+    "prompt": "A loop reads only positions from millions of records containing position, velocity, and metadata. Compare array-of-structs and structure-of-arrays layouts.",
+    "solution": "An array of structs can fetch unused fields alongside positions, wasting bandwidth for this loop. Separate position arrays can improve contiguous useful access and vectorization, while making operations needing complete records less convenient. Compare actual access patterns, update behavior, and conversion costs before choosing a layout.",
+    "hints": [
+      "Measure useful bytes per fetched line.",
+      "Other loops may need all fields together."
+    ],
+    "rubric": [
+      "Explain unnecessary data movement.",
+      "Identify vectorization benefits.",
+      "Evaluate competing access patterns."
+    ],
+    "followUp": "How could a hybrid blocked layout balance both workloads?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-frequency-time",
+    "topic": "architecture",
+    "title": "More cycles per second is only one factor",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "CPU performance",
+      "CPI"
+    ],
+    "prompt": "A toy workload executes 1 billion instructions at an average CPI of 2 on a 2 GHz processor. What is execution time in seconds, assuming fixed CPI and no other delays?",
+    "solution": "1 second: instructions×CPI/frequency = 10^9×2/(2×10^9). Frequency alone cannot compare processors without instruction count and effective CPI. Real CPI includes dependency, cache, and execution-resource behavior.",
+    "hints": [
+      "Compute total cycles first.",
+      "GHz means billions of cycles per second."
+    ],
+    "rubric": [
+      "Compute two billion cycles.",
+      "Divide by two GHz.",
+      "State fixed-model assumptions."
+    ],
+    "followUp": "What happens if frequency rises 25% but CPI also rises 25%?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "1"
+  },
+  {
+    "id": "architecture-coherence-consistency",
+    "topic": "architecture",
+    "title": "Agreement on a line is not a global order",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Coherence",
+      "Consistency"
+    ],
+    "prompt": "Distinguish cache coherence from memory consistency. Why does a coherent machine still need memory-ordering rules for concurrent algorithms?",
+    "solution": "Coherence governs observations and ownership of writes to individual memory locations or cache lines. Consistency defines allowed ordering relationships across operations, including different locations. A coherent system can permit outcomes forbidden by a stronger consistency model, so synchronization must establish the cross-location relationships the algorithm needs.",
+    "hints": [
+      "One-location agreement is narrower than program-wide order.",
+      "Consider data and a separate ready flag."
+    ],
+    "rubric": [
+      "Define coherence scope.",
+      "Define consistency scope.",
+      "Explain cross-location synchronization."
+    ],
+    "followUp": "Why does false sharing concern coherence even for independent variables?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-mlp-bound",
+    "topic": "architecture",
+    "title": "Independent misses can overlap",
+    "difficulty": "Advanced",
+    "format": "numeric",
+    "minutes": 12,
+    "tags": [
+      "Memory-level parallelism",
+      "Latency"
+    ],
+    "prompt": "A toy core can sustain eight independent cache misses, each completing in 100 ns, with no bandwidth or issue bottleneck. What is its idealized completed-miss rate per nanosecond?",
+    "solution": "0.08 misses/ns: eight completions per 100 ns. This is a steady-state overlap bound. Dependent accesses cannot generally use all eight slots, and real bandwidth or controller limits can reduce the achieved rate.",
+    "hints": [
+      "Count concurrent requests over one latency interval.",
+      "Independence is essential."
+    ],
+    "rubric": [
+      "Compute 8/100.",
+      "Interpret a steady-state rate.",
+      "State dependence and bandwidth limits."
+    ],
+    "followUp": "What would the bound be for one dependent outstanding miss?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "0.08"
+  },
+  {
+    "id": "architecture-non-temporal",
+    "topic": "architecture",
+    "title": "Streaming writes can avoid useless cache occupancy",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Stores",
+      "Cache policy"
+    ],
+    "prompt": "When might non-temporal stores help a large output stream, and why are they not a universal replacement for ordinary stores?",
+    "solution": "They can reduce cache pollution and some ownership traffic for suitable aligned streaming writes whose data will not be reused soon. Small, partial, or soon-read outputs may perform worse, and ordering or completion requirements must follow the architecture's contract. Benchmark the actual producer-consumer pattern rather than only write bandwidth.",
+    "hints": [
+      "Consider whether the output will be read immediately.",
+      "Store policy affects visibility and ordering rules too."
+    ],
+    "rubric": [
+      "Identify streaming non-reuse use.",
+      "Discuss alignment and access-shape limits.",
+      "Validate ordering and end-to-end performance."
+    ],
+    "followUp": "Why can a consumer on another core change the tradeoff?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-numa-first-touch",
+    "topic": "architecture",
+    "title": "Allocation policy follows actual page placement",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "NUMA",
+      "Placement"
+    ],
+    "prompt": "A main thread initializes all pages before workers pinned to other sockets process them. Why can parallel scaling regress despite distributed worker placement?",
+    "solution": "Under a common first-touch policy, initialization places pages near the initializing thread, leaving other workers with remote accesses. Partition initialization or set an appropriate memory policy, then verify actual placement and traffic. NUMA behavior depends on policy and migration, so worker affinity alone is insufficient evidence.",
+    "hints": [
+      "Thread placement and page placement differ.",
+      "Find which thread faults in each page."
+    ],
+    "rubric": [
+      "Explain first-touch placement.",
+      "Identify remote worker accesses.",
+      "Verify a locality-aware initialization change."
+    ],
+    "followUp": "When might interleaving pages be preferable to strict local placement?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-instruction-cache",
+    "topic": "architecture",
+    "title": "Inlining can make the hot path larger",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Instruction cache",
+      "Inlining"
+    ],
+    "prompt": "Explain why aggressive inlining can slow a program even when it removes call overhead.",
+    "solution": "Inlining can increase code size, pressure instruction caches and translation structures, and worsen front-end locality. It can also enable valuable optimization, so the tradeoff depends on call frequency and code layout. Compare profiles and representative latency or throughput, keeping build settings controlled.",
+    "hints": [
+      "Instructions need cache space too.",
+      "Removing a call may duplicate its body many times."
+    ],
+    "rubric": [
+      "Explain code growth.",
+      "Identify front-end costs.",
+      "Measure against optimization benefits."
+    ],
+    "followUp": "How can profile-guided optimization make selective inlining more effective?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-memory-bandwidth",
+    "topic": "architecture",
+    "title": "Sockets can share a saturated resource",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Bandwidth",
+      "Scaling"
+    ],
+    "prompt": "A streaming workload doubles its worker count but throughput barely changes. Design a check for memory-bandwidth saturation versus a serialization bottleneck.",
+    "solution": "Measure achieved memory traffic and compare with a relevant sustainable bandwidth baseline, alongside worker utilization and lock or dependency stalls. Vary working-set size and placement, and inspect per-socket traffic. A bandwidth plateau should respond differently from one serialized critical section; validate a targeted layout or synchronization change.",
+    "hints": [
+      "A shared resource can saturate before cores do.",
+      "Look for different evidence for locks and traffic."
+    ],
+    "rubric": [
+      "Measure bandwidth and stalls.",
+      "Control placement and working set.",
+      "Distinguish and test competing causes."
+    ],
+    "followUp": "Why is peak advertised bandwidth a weak baseline for a mixed-access workload?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-spectre-boundary",
+    "topic": "architecture",
+    "title": "Architectural rejection can leave a trace",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Speculation",
+      "Side channels"
+    ],
+    "prompt": "Why can an architectural bounds check be insufficient by itself to prevent a speculative-execution side channel?",
+    "solution": "A processor may transiently execute along a predicted path before resolving the check, and secret-dependent accesses can alter microarchitectural state. Architectural results are later discarded, but timing traces may remain. Use platform-appropriate mitigations within a concrete threat model; ordinary language correctness does not by itself prove side-channel resistance.",
+    "hints": [
+      "Discarded results can still affect caches.",
+      "Identify the observer's available timing channel."
+    ],
+    "rubric": [
+      "Explain transient access.",
+      "Distinguish architectural and timing effects.",
+      "Require threat-specific mitigations."
+    ],
+    "followUp": "Why might process isolation alone leave some shared microarchitectural resources?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-atomic-contention",
+    "topic": "architecture",
+    "title": "A single counter serializes a many-core workload",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Atomics",
+      "Scalability"
+    ],
+    "prompt": "Workers update one atomic counter for every event and scaling collapses. Propose a redesign and explain the semantic cost of a cheaper aggregate.",
+    "solution": "Use per-worker or sharded counters and aggregate periodically, reducing ownership transfers of one cache line. Pad where needed to avoid false sharing. This trades an immediately exact global count for delayed or coordinated aggregation; if exact ordering is required, identify and budget the serialization point explicitly.",
+    "hints": [
+      "One hot line can bounce among cores.",
+      "Ask whether every observer needs an exact instant count."
+    ],
+    "rubric": [
+      "Reduce shared write contention.",
+      "Prevent false sharing among shards.",
+      "State aggregate freshness semantics."
+    ],
+    "followUp": "How would worker shutdown safely transfer its final count?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-benchmark-fence",
+    "topic": "architecture",
+    "title": "A timer needs a measurement protocol",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Benchmarking",
+      "Cycle counters"
+    ],
+    "prompt": "Design a trustworthy microbenchmark using cycle counters on a modern CPU. Explain what must be controlled before interpreting a tiny cycle difference.",
+    "solution": "Use architecture-appropriate ordering around counter reads, prevent the measured work from being optimized away, and account for migration and counter semantics. Repeat with overhead calibration and report distributions. Control warmup, frequency effects, dependencies, and cache state, and verify that the microbenchmark represents the intended application path.",
+    "hints": [
+      "The timer read can move relative to work.",
+      "A counter tick need not mean one current core cycle."
+    ],
+    "rubric": [
+      "Order and retain measured work.",
+      "Control counter and scheduling assumptions.",
+      "Report distributions and workload relevance."
+    ],
+    "followUp": "Why can subtracting an empty-loop average still leave systematic bias?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-heterogeneous-cores",
+    "topic": "architecture",
+    "title": "Equal thread counts need not mean equal capacity",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Scheduling",
+      "Heterogeneous CPUs"
+    ],
+    "prompt": "A latency benchmark varies widely on a CPU with different core classes. Plan a comparison that separates placement from the algorithm change being evaluated.",
+    "solution": "Record actual core placement, topology, power conditions, and competing load, then compare the same workload on controlled core classes. Report both fixed-placement and realistic scheduling behavior if relevant. A faster run caused by migration to a stronger core is not evidence that the algorithm improved.",
+    "hints": [
+      "Core identity can change during a run.",
+      "Power and scheduling interact with placement."
+    ],
+    "rubric": [
+      "Track topology and migration.",
+      "Control comparable execution conditions.",
+      "Separate algorithm and scheduling effects."
+    ],
+    "followUp": "How could fixed affinity hide behavior users experience under the normal scheduler?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ]
+  },
+  {
+    "id": "architecture-end-to-end-limit",
+    "topic": "architecture",
+    "title": "A local speedup meets the serial fraction",
+    "difficulty": "Expert",
+    "format": "numeric",
+    "minutes": 18,
+    "tags": [
+      "Amdahl's law",
+      "Performance modeling"
+    ],
+    "prompt": "A workload spends 80% of its time in a component improved by 4×, while the remaining 20% is unchanged. Ignoring overhead, what is overall speedup?",
+    "solution": "2.5×, from 1/(0.2+0.8/4)=1/0.4. The result assumes the fractions describe the original workload and the optimization does not shift work or add overhead. A fourfold component improvement does not yield a fourfold total improvement.",
+    "hints": [
+      "Normalize original runtime to one.",
+      "Only the 0.8 fraction is divided by four."
+    ],
+    "rubric": [
+      "Compute new runtime 0.4.",
+      "Invert to obtain 2.5.",
+      "State fixed-workload assumptions."
+    ],
+    "followUp": "What is the maximum speedup if that component becomes infinitely fast?",
+    "references": [
+      {
+        "title": "Intel architecture and optimization manuals",
+        "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+      }
+    ],
+    "expected": "2.5"
+  }
+]

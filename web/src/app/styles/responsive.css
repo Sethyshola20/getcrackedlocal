@@ -1,0 +1,1926 @@
+/* Size adaptations */
+@media (min-width: 1550px) {
+  .page {
+    padding-top: 45px;
+  }
+  .hero-card {
+    min-height: 335px;
+  }
+  .hero-copy {
+    padding: 39px 40px;
+  }
+  .hero-copy h2 {
+    font-size: 43px;
+  }
+  .hero-copy p {
+    font-size: 12px;
+  }
+  .hero-eyebrow {
+    font-size: 9px;
+  }
+  .hero-actions {
+    margin-top: 25px;
+  }
+  .hero-foot {
+    margin-top: 29px;
+    font-size: 9px;
+  }
+  .hero-actions .button {
+    font-size: 11px;
+    min-height: 42px;
+  }
+  .hero-actions > a {
+    font-size: 11px;
+  }
+  .art-label {
+    font-size: 8px;
+    padding: 6px 9px;
+  }
+  .overview-columns {
+    grid-template-columns: minmax(0, 1fr) 270px;
+    gap: 25px;
+  }
+  .topic-card {
+    padding: 19px;
+  }
+  .topic-card h3 {
+    font-size: 13px;
+  }
+  .topic-card p {
+    font-size: 10px;
+    min-height: 34px;
+  }
+  .topic-card-foot {
+    font-size: 8px;
+  }
+  .topic-level {
+    font-size: 6px;
+  }
+  .topic-card-top {
+    margin-bottom: 17px;
+  }
+  .topic-mark {
+    width: 40px;
+    height: 40px;
+  }
+  .daily-card {
+    padding: 25px 23px 0;
+  }
+  .goal-ring {
+    margin: 34px 0 26px;
+    width: 134px;
+    height: 134px;
+  }
+  .daily-card h3 {
+    font-size: 13px;
+  }
+  .daily-card > p {
+    font-size: 10px;
+    max-width: 200px;
+  }
+  .daily-button {
+    margin-top: 22px;
+    min-height: 37px;
+    font-size: 9px;
+  }
+  .daily-bottom {
+    width: calc(100% + 46px);
+    font-size: 7px;
+    padding: 16px 10px;
+  }
+  .small-label {
+    font-size: 8px;
+  }
+  .section-heading h2 {
+    font-size: 17px;
+  }
+  .section-heading p {
+    font-size: 10px;
+  }
+  .text-link {
+    font-size: 10px;
+  }
+  .path-card h3 {
+    font-size: 14px;
+  }
+  .path-card p {
+    font-size: 11px;
+    max-width: 290px;
+    min-height: 37px;
+  }
+  .path-topics > span {
+    font-size: 7px;
+  }
+  .path-card-foot {
+    font-size: 8px;
+    padding-top: 15px;
+    padding-bottom: 15px;
+  }
+  .question-name strong {
+    font-size: 12px;
+  }
+  .question-name > div > span {
+    font-size: 9px;
+  }
+  .question-row {
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
+  .difficulty,
+  .format-label {
+    font-size: 9px;
+  }
+  .stat-label {
+    font-size: 10px;
+  }
+  .stat-sub {
+    font-size: 9px;
+  }
+  .stat-value {
+    font-size: 31px;
+  }
+  .page-heading h1 {
+    font-size: 31px;
+  }
+  .page-heading p {
+    font-size: 12px;
+  }
+  .bottom-thought > p {
+    font-size: 10px;
+  }
+  .question-layout {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 40px;
+  }
+  .question-content h1 {
+    font-size: 36px;
+  }
+  .markdown {
+    font-size: 14px;
+  }
+  .solution {
+    font-size: 13px;
+  }
+  .thinking-card {
+    padding: 27px;
+  }
+  .thinking-card h3 {
+    font-size: 21px;
+  }
+  .thinking-card p {
+    font-size: 11px;
+  }
+  .thinking-card li {
+    font-size: 10px;
+  }
+  .question-depth p {
+    font-size: 10px;
+  }
+  .answer-footer > span {
+    font-size: 9px;
+    max-width: 320px;
+  }
+  .answer-tabs > button {
+    font-size: 11px;
+  }
+  .choice-option {
+    font-size: 13px;
+  }
+  .text-answer textarea {
+    font-size: 13px;
+    min-height: 290px;
+  }
+  .code-answer textarea {
+    font-size: 12px;
+  }
+  .question-submeta > span:nth-child(2) {
+    font-size: 10px;
+  }
+  .code-block pre {
+    font-size: 12px;
+  }
+  .feedback-heading h2 {
+    font-size: 17px;
+  }
+  .rubric-item {
+    font-size: 12px;
+  }
+  .follow-up p {
+    font-size: 12px;
+  }
+}
+@media (max-width: 1200px) {
+  .sidebar {
+    width: 213px;
+    padding-left: 13px;
+    padding-right: 13px;
+  }
+  .workspace-main {
+    margin-left: 213px;
+  }
+  .sidebar > .brand {
+    font-size: 23px;
+    padding-left: 9px;
+  }
+  .main-nav > a {
+    font-size: 10.5px;
+  }
+  .topbar {
+    padding: 0 27px;
+  }
+  .page {
+    padding: 29px 27px;
+  }
+  .page-footer {
+    padding-left: 27px;
+    padding-right: 27px;
+  }
+  .page-heading h1 {
+    font-size: 25px;
+  }
+  .hero-copy {
+    padding: 28px;
+  }
+  .hero-copy h2 {
+    font-size: 33px;
+  }
+  .hero-card {
+    min-height: 290px;
+  }
+  .hero-foot {
+    gap: 10px;
+    font-size: 7px;
+  }
+  .stack-art {
+    width: 38%;
+    min-width: 230px;
+  }
+  .hero-actions {
+    gap: 17px;
+  }
+  .hero-actions .button {
+    font-size: 9px;
+    gap: 10px;
+  }
+  .hero-actions > a {
+    font-size: 9px;
+    gap: 5px;
+  }
+  .art-label {
+    font-size: 5px;
+    padding: 4px 5px;
+  }
+  .stat {
+    padding: 17px;
+  }
+  .stat-label {
+    font-size: 8px;
+  }
+  .stat-sub {
+    font-size: 7px;
+  }
+  .overview-columns {
+    grid-template-columns: minmax(0, 1fr) 205px;
+    gap: 17px;
+  }
+  .topic-card {
+    padding: 12px 11px 11px;
+  }
+  .topic-card h3 {
+    font-size: 10px;
+  }
+  .topic-card p {
+    font-size: 7.5px;
+  }
+  .topic-card-foot {
+    font-size: 6px;
+  }
+  .topic-level {
+    font-size: 4.5px;
+    letter-spacing: 0.4px;
+  }
+  .topic-grid {
+    gap: 9px;
+  }
+  .daily-card {
+    padding-left: 13px;
+    padding-right: 13px;
+  }
+  .daily-title > .small-label {
+    font-size: 6px;
+  }
+  .goal-ring {
+    width: 106px;
+    height: 106px;
+    margin: 23px 0 18px;
+  }
+  .daily-card h3 {
+    font-size: 10px;
+  }
+  .daily-card > p {
+    font-size: 8px;
+  }
+  .daily-button {
+    font-size: 7px;
+    gap: 7px;
+  }
+  .daily-bottom {
+    width: calc(100% + 26px);
+    font-size: 5.8px;
+  }
+  .section-heading h2 {
+    font-size: 13px;
+  }
+  .section-heading p {
+    font-size: 8px;
+  }
+  .text-link {
+    font-size: 8px;
+  }
+  .path-card {
+    padding: 16px 15px 0;
+  }
+  .path-card h3 {
+    font-size: 11px;
+  }
+  .path-card > p {
+    font-size: 8px;
+  }
+  .path-card-foot {
+    margin-left: -15px;
+    margin-right: -15px;
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+  .path-topics > span {
+    font-size: 5px;
+  }
+  .table-header,
+  .question-row {
+    grid-template-columns: minmax(0, 1fr) 112px 127px 14px;
+    gap: 9px;
+  }
+  .question-name strong {
+    font-size: 10px;
+  }
+  .format-label {
+    font-size: 7px;
+  }
+  .question-layout {
+    grid-template-columns: minmax(0, 1fr) 185px;
+    gap: 23px;
+  }
+  .thinking-card {
+    padding: 18px 15px;
+  }
+  .thinking-card h3 {
+    font-size: 16px;
+  }
+  .thinking-card .small-label {
+    font-size: 5.2px;
+  }
+  .question-content h1 {
+    font-size: 27px;
+  }
+  .answer-tabs {
+    gap: 13px;
+  }
+  .answer-tabs > button > span {
+    display: none;
+  }
+  .draft-label {
+    font-size: 5px;
+  }
+  .filter-select select {
+    max-width: 140px;
+    font-size: 8px;
+  }
+  .question-submeta {
+    gap: 12px;
+  }
+  .question-id {
+    font-size: 5px;
+  }
+  .question-submeta > span:nth-child(2) {
+    font-size: 8px;
+  }
+  .answer-footer > span {
+    max-width: 160px;
+    font-size: 6.5px;
+  }
+  .paths-full .path-card h3 {
+    font-size: 18px;
+  }
+}
+@media (max-width: 1000px) {
+  .overview-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .daily-card {
+    display: none;
+  }
+  .topic-grid {
+    gap: 12px;
+  }
+  .topic-card {
+    padding: 17px;
+  }
+  .topic-card h3 {
+    font-size: 12px;
+  }
+  .topic-card p {
+    font-size: 9px;
+    min-height: 31px;
+  }
+  .topic-card-foot {
+    font-size: 7px;
+  }
+  .topic-level {
+    font-size: 5px;
+  }
+  .hero-copy h2 {
+    font-size: 30px;
+  }
+  .hero-actions {
+    gap: 13px;
+  }
+  .hero-copy {
+    padding: 26px 24px;
+  }
+  .hero-copy p {
+    font-size: 10px;
+  }
+  .hero-foot {
+    font-size: 6px;
+    gap: 9px;
+  }
+  .hero-actions > a {
+    font-size: 8px;
+  }
+  .stack-art {
+    min-width: 190px;
+    width: 34%;
+  }
+  .hero-card {
+    min-height: 280px;
+  }
+  .hero-actions .button {
+    font-size: 8px;
+    padding: 10px 11px;
+    gap: 8px;
+    min-height: 35px;
+  }
+  .art-tag {
+    font-size: 4.5px;
+  }
+  .art-label {
+    font-size: 4.5px;
+  }
+  .art-label.two {
+    right: 1%;
+  }
+  .art-cross.b {
+    bottom: 25%;
+  }
+  .path-grid {
+    gap: 10px;
+  }
+  .path-card h3 {
+    font-size: 10px;
+  }
+  .path-card p {
+    font-size: 7.5px;
+    min-height: 39px;
+  }
+  .path-topics {
+    margin-top: 10px;
+    min-height: 30px;
+    align-content: flex-start;
+    gap: 4px;
+  }
+  .path-card-foot {
+    font-size: 6px;
+  }
+  .path-card {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .path-card-foot {
+    margin-left: -12px;
+    margin-right: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .path-card-top {
+    gap: 7px;
+  }
+  .path-no {
+    font-size: 5px;
+  }
+  .path-symbol {
+    width: 29px;
+    height: 29px;
+  }
+  .path-symbol > svg {
+    width: 17px;
+  }
+  .topbar {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .top-actions {
+    gap: 15px;
+  }
+  .search-trigger kbd {
+    margin-left: 5px;
+  }
+  .breadcrumb {
+    gap: 8px;
+    font-size: 9px;
+  }
+  .question-aside {
+    display: none;
+  }
+  .question-layout {
+    grid-template-columns: 1fr;
+  }
+  .question-content h1 {
+    font-size: 30px;
+  }
+  .markdown {
+    font-size: 13px;
+  }
+  .question-submeta .question-id {
+    font-size: 6px;
+  }
+  .question-submeta {
+    gap: 17px;
+  }
+  .answer-footer > span {
+    max-width: 280px;
+    font-size: 8px;
+  }
+  .answer-tabs > button > span {
+    display: inline;
+  }
+  .draft-label {
+    font-size: 6px;
+  }
+  .tab-note {
+    display: none;
+  }
+  .library-filters {
+    flex-wrap: wrap;
+  }
+  .filter-search {
+    flex-basis: 100%;
+  }
+  .filter-select {
+    flex: 1;
+  }
+  .filter-select select {
+    width: 100%;
+    max-width: none;
+  }
+  .question-name strong {
+    font-size: 10px;
+  }
+  .table-header,
+  .question-row {
+    grid-template-columns: minmax(0, 1fr) 100px 14px;
+  }
+  .table-header > span:nth-child(3),
+  .question-row > .format-label {
+    display: none;
+  }
+  .paths-full {
+    grid-template-columns: 1fr 1fr;
+  }
+  .paths-full .path-card {
+    padding: 21px 18px 0;
+  }
+  .paths-full .path-card h3 {
+    font-size: 17px;
+  }
+  .paths-full .path-card p {
+    font-size: 10px;
+    min-height: 48px;
+  }
+  .paths-full .path-card-foot {
+    margin-left: -18px;
+    margin-right: -18px;
+    padding-left: 18px;
+    padding-right: 18px;
+    font-size: 8px;
+  }
+  .paths-full .path-topics > span {
+    font-size: 6px;
+  }
+  .path-principles {
+    gap: 15px;
+  }
+  .path-principles h3 {
+    font-size: 11px;
+  }
+  .path-principles p {
+    font-size: 9px;
+  }
+  .path-detail-hero h1 {
+    font-size: 27px;
+  }
+  .path-detail-progress {
+    position: static;
+    width: 100%;
+    margin-top: 25px;
+    max-width: 300px;
+  }
+  .mastery-row {
+    padding: 11px 10px;
+    gap: 10px;
+  }
+  .mastery-row strong {
+    font-size: 9px;
+  }
+  .mastery-row > span:last-child {
+    font-size: 11px;
+    margin: 0;
+  }
+  .mastery-row > span > small {
+    font-size: 8px;
+  }
+  .page-heading > .button {
+    font-size: 8px;
+    gap: 7px;
+    padding: 9px;
+  }
+  .page-heading > .button svg {
+    width: 13px;
+  }
+  .stat {
+    padding: 15px 12px;
+  }
+  .stat-label {
+    font-size: 7px;
+  }
+  .stat-sub {
+    font-size: 6.5px;
+  }
+  .stat-value {
+    font-size: 26px;
+  }
+  .stat-label > svg {
+    width: 13px;
+  }
+  .bottom-thought > p {
+    font-size: 8px;
+  }
+  .bottom-thought > .small-label {
+    font-size: 5px;
+  }
+  .date-stamp {
+    font-size: 7px;
+    padding: 7px;
+  }
+  .page-heading h1 {
+    font-size: 23px;
+    gap: 10px;
+  }
+  .heading-spark {
+    font-size: 22px;
+  }
+  .page-heading .eyebrow {
+    font-size: 6px;
+  }
+  .page-heading p {
+    font-size: 10px;
+  }
+}
+@media (max-width: 760px) {
+  .sidebar {
+    transform: translateX(-100%);
+    width: 238px;
+    transition: transform 0.2s;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: #00000099;
+    z-index: 29;
+    backdrop-filter: blur(3px);
+  }
+  .workspace-main {
+    margin-left: 0;
+  }
+  .mobile-menu {
+    display: grid !important;
+  }
+  .topbar {
+    height: 61px;
+    padding: 0 20px;
+  }
+  .top-actions {
+    gap: 14px;
+  }
+  .top-divider {
+    display: none;
+  }
+  .search-trigger > span,
+  .search-trigger kbd {
+    display: none;
+  }
+  .search-trigger > svg {
+    width: 17px;
+    height: 17px;
+  }
+  .breadcrumb {
+    font-size: 10px;
+    gap: 10px;
+  }
+  .breadcrumb > .mobile-menu {
+    margin-left: -6px;
+  }
+  .breadcrumb > svg {
+    display: none;
+  }
+  .page {
+    padding: 26px 20px;
+  }
+  .page-heading {
+    margin-bottom: 24px;
+  }
+  .page-heading h1 {
+    font-size: 26px;
+  }
+  .page-heading .eyebrow {
+    font-size: 7px;
+  }
+  .page-heading p {
+    font-size: 11px;
+  }
+  .date-stamp {
+    font-size: 8px;
+  }
+  .hero-copy h2 {
+    font-size: 36px;
+  }
+  .hero-copy p {
+    font-size: 11px;
+  }
+  .hero-copy {
+    padding: 28px;
+  }
+  .hero-card {
+    min-height: 300px;
+  }
+  .stack-art {
+    width: 35%;
+    min-width: 180px;
+    opacity: 0.85;
+  }
+  .hero-actions .button {
+    font-size: 9px;
+    min-height: 38px;
+    padding: 10px 13px;
+  }
+  .hero-actions > a {
+    font-size: 9px;
+  }
+  .hero-foot {
+    font-size: 6.5px;
+    gap: 10px;
+  }
+  .hero-eyebrow {
+    font-size: 7px;
+  }
+  .stat-label {
+    font-size: 9px;
+  }
+  .stat {
+    padding: 17px 15px;
+  }
+  .stat-sub {
+    font-size: 7px;
+  }
+  .section-heading h2 {
+    font-size: 15px;
+  }
+  .section-heading p {
+    font-size: 9px;
+  }
+  .text-link {
+    font-size: 9px;
+  }
+  .topic-card h3 {
+    font-size: 12px;
+  }
+  .topic-card p {
+    font-size: 8.5px;
+  }
+  .topic-level {
+    font-size: 5px;
+  }
+  .topic-card-foot {
+    font-size: 7px;
+  }
+  .path-card h3 {
+    font-size: 11px;
+  }
+  .path-card p {
+    font-size: 8px;
+  }
+  .path-topics > span {
+    font-size: 6px;
+  }
+  .path-card-foot {
+    font-size: 7px;
+  }
+  .paths-full .path-card h3 {
+    font-size: 18px;
+  }
+  .page-footer {
+    padding: 18px 20px;
+    font-size: 7px;
+  }
+  .toast {
+    left: 50%;
+    font-size: 10px;
+  }
+  .sidebar > .brand {
+    font-size: 24px;
+  }
+  .sidebar .main-nav > a {
+    font-size: 11.5px;
+  }
+  .all-topic-grid .topic-card {
+    padding: 18px;
+  }
+  .all-topic-grid .topic-card h3 {
+    font-size: 12px;
+  }
+  .all-topic-grid .topic-card p {
+    font-size: 9px;
+    min-height: 44px;
+  }
+  .all-topic-grid .topic-level {
+    display: none;
+  }
+  .all-topic-grid .topic-card-foot {
+    font-size: 8px;
+  }
+  .tab-note {
+    display: flex;
+    font-size: 7px;
+  }
+  .table-header,
+  .question-row {
+    grid-template-columns: minmax(0, 1fr) 115px 14px;
+  }
+  .question-name strong {
+    font-size: 11px;
+  }
+  .format-label {
+    font-size: 8px;
+  }
+  .results-bar {
+    font-size: 9px;
+  }
+  .question-content h1 {
+    font-size: 31px;
+  }
+  .markdown {
+    font-size: 13px;
+  }
+  .code-block pre {
+    font-size: 11px;
+  }
+  .answer-tabs > button {
+    font-size: 10px;
+  }
+  .answer-tabs > button > span {
+    font-size: 5px;
+  }
+  .text-answer textarea {
+    font-size: 12px;
+  }
+  .question-submeta > span:nth-child(2) {
+    font-size: 9px;
+  }
+  .question-content .difficulty {
+    font-size: 9px;
+  }
+  .question-submeta .question-id {
+    font-size: 5px;
+  }
+  .history-row strong {
+    font-size: 11px;
+  }
+  .activity-panel {
+    padding: 20px;
+  }
+  .activity-panel .small-label {
+    font-size: 6px;
+  }
+  .settings-section h2 {
+    font-size: 17px;
+  }
+  .global-results .difficulty {
+    font-size: 7px;
+  }
+  .modal {
+    padding: 27px;
+  }
+  .search-modal {
+    padding: 0;
+  }
+  .library-heading > .button {
+    font-size: 9px;
+  }
+  .outlined-count {
+    font-size: 6px;
+  }
+  .path-detail-meta {
+    font-size: 9px;
+  }
+  .question-name > div > span {
+    font-size: 8px;
+  }
+}
+@media (max-width: 520px) {
+  .page {
+    padding: 23px 17px;
+  }
+  .topbar {
+    padding: 0 17px;
+  }
+  .breadcrumb {
+    font-size: 9px;
+    gap: 7px;
+  }
+  .breadcrumb > span:nth-child(3) {
+    display: none;
+  }
+  .sign-in {
+    font-size: 10px;
+  }
+  .page-heading {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .page-heading h1 {
+    font-size: 24px;
+    letter-spacing: -0.9px;
+    gap: 7px;
+  }
+  .heading-spark {
+    font-size: 20px;
+  }
+  .page-heading p {
+    font-size: 10px;
+    line-height: 1.8;
+  }
+  .eyebrow-line {
+    display: none;
+  }
+  .date-stamp {
+    display: none;
+  }
+  .hero-card {
+    min-height: 317px;
+  }
+  .hero-copy {
+    padding: 27px 22px;
+  }
+  .hero-copy h2 {
+    font-size: 35px;
+    line-height: 1.17;
+    margin-top: 17px;
+  }
+  .hero-copy p {
+    font-size: 10px;
+    max-width: 240px;
+    line-height: 1.9;
+  }
+  .hero-eyebrow {
+    font-size: 6.5px;
+    letter-spacing: 1.8px;
+  }
+  .hero-actions {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 13px;
+    margin-top: 22px;
+  }
+  .hero-actions .button {
+    min-height: 37px;
+    font-size: 9px;
+    gap: 13px;
+  }
+  .hero-actions > a {
+    font-size: 8px;
+  }
+  .hero-foot {
+    flex-wrap: wrap;
+    font-size: 6px;
+    gap: 10px;
+    margin-top: 23px;
+  }
+  .hero-foot > span:last-child {
+    display: none;
+  }
+  .stack-art {
+    position: absolute;
+    width: 210px;
+    height: 210px;
+    min-width: 0;
+    right: -61px;
+    bottom: -14px;
+    z-index: -1;
+    opacity: 0.5;
+  }
+  .stack-svg {
+    inset: 0;
+  }
+  .art-label,
+  .art-tag,
+  .art-cross {
+    display: none;
+  }
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    margin-top: 16px;
+  }
+  .stat {
+    padding: 17px 17px 15px;
+  }
+  .stat:nth-child(2) {
+    border-right: 0;
+  }
+  .stat:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-label {
+    font-size: 9px;
+  }
+  .stat-value {
+    font-size: 29px;
+    margin-top: 9px;
+  }
+  .stat-value > span {
+    font-size: 10px;
+  }
+  .stat-sub {
+    font-size: 7px;
+    margin-top: 7px;
+  }
+  .stat-label > svg {
+    width: 15px;
+  }
+  .overview-columns {
+    margin-top: 26px;
+  }
+  .section-heading {
+    gap: 10px;
+    margin-bottom: 15px;
+  }
+  .section-heading h2 {
+    font-size: 14px;
+    letter-spacing: -0.3px;
+  }
+  .section-heading p {
+    font-size: 8px;
+  }
+  .section-heading .text-link {
+    font-size: 8px;
+  }
+  .topic-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .topic-card {
+    padding: 15px 13px 12px;
+  }
+  .topic-card h3 {
+    font-size: 11px;
+  }
+  .topic-card p {
+    font-size: 8px;
+    line-height: 1.8;
+    min-height: 31px;
+  }
+  .topic-card-top {
+    margin-bottom: 13px;
+  }
+  .topic-mark {
+    width: 34px;
+    height: 34px;
+  }
+  .topic-card-foot {
+    font-size: 6.5px;
+    gap: 3px;
+  }
+  .topic-level {
+    font-size: 4.3px;
+    letter-spacing: 0.35px;
+  }
+  .path-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .path-card {
+    padding: 19px 19px 0;
+  }
+  .path-card-top {
+    margin-bottom: 14px;
+  }
+  .path-card h3 {
+    font-size: 15px;
+  }
+  .path-card > p {
+    font-size: 10px;
+    max-width: 280px;
+    min-height: 0;
+  }
+  .path-topics {
+    min-height: 0;
+    margin-top: 15px;
+    gap: 6px;
+  }
+  .path-topics > span {
+    font-size: 7px;
+    padding: 4px 6px;
+  }
+  .path-card-foot {
+    margin: 19px -19px 0;
+    padding: 13px 19px;
+    font-size: 8px;
+  }
+  .path-no {
+    font-size: 6px;
+  }
+  .path-symbol {
+    width: 34px;
+    height: 34px;
+  }
+  .path-symbol > svg {
+    width: 20px;
+  }
+  .paths-section,
+  .recommend-section {
+    margin-top: 27px;
+  }
+  .recommend-section .section-heading h2 {
+    font-size: 13px;
+  }
+  .recommend-section .text-link {
+    font-size: 7px;
+  }
+  .table-header,
+  .question-row {
+    grid-template-columns: minmax(0, 1fr) 80px;
+    gap: 8px;
+  }
+  .table-header {
+    font-size: 6px;
+    padding: 12px;
+  }
+  .table-header > span:last-child,
+  .row-arrow {
+    display: none;
+  }
+  .question-row {
+    padding: 15px 12px;
+  }
+  .question-name {
+    gap: 8px;
+  }
+  .question-name strong {
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .question-name > div > span {
+    font-size: 7px;
+    gap: 4px;
+  }
+  .question-status {
+    width: 12px;
+  }
+  .question-status > svg {
+    width: 11px;
+  }
+  .difficulty {
+    font-size: 7px;
+    gap: 5px;
+  }
+  .difficulty-bars {
+    gap: 1.5px;
+  }
+  .bottom-thought {
+    padding: 23px 2px 0;
+    gap: 9px;
+  }
+  .bottom-thought > p {
+    font-size: 8px;
+    line-height: 1.7;
+  }
+  .bottom-thought > .small-label {
+    display: none;
+  }
+  .page-footer {
+    padding: 15px 17px;
+    font-size: 6px;
+    gap: 10px;
+  }
+  .page-footer > span:last-child {
+    font-size: 5.5px;
+    gap: 5px;
+  }
+  .page-footer svg {
+    width: 10px;
+  }
+  .library-heading {
+    flex-wrap: wrap;
+    gap: 17px;
+  }
+  .library-heading > .button {
+    font-size: 8px;
+    min-height: 33px;
+    padding: 9px 11px;
+  }
+  .library-tabs {
+    gap: 23px;
+    margin-bottom: 20px;
+  }
+  .library-tabs > button {
+    font-size: 10px;
+  }
+  .tab-note {
+    display: none;
+  }
+  .all-topic-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 11px;
+  }
+  .all-topic-grid .topic-card {
+    padding: 15px;
+  }
+  .all-topic-grid .topic-card h3 {
+    font-size: 12px;
+  }
+  .all-topic-grid .topic-card p {
+    font-size: 8px;
+    min-height: 43px;
+  }
+  .all-topic-grid .topic-mark {
+    width: 38px;
+    height: 38px;
+  }
+  .all-topic-grid .topic-card-top {
+    margin-bottom: 15px;
+  }
+  .filter-search {
+    min-width: 100%;
+    padding: 0 10px;
+  }
+  .filter-search input {
+    font-size: 9px;
+  }
+  .library-filters {
+    gap: 7px;
+  }
+  .filter-select select {
+    font-size: 8px;
+    padding-left: 9px;
+    padding-right: 23px;
+  }
+  .filter-select > svg {
+    right: 8px;
+    width: 12px;
+  }
+  .filter-select {
+    min-width: 0;
+  }
+  .filter-select:nth-child(2) {
+    flex: 1.05;
+  }
+  .filter-select:nth-child(3) {
+    flex: 1;
+  }
+  .filter-select:nth-child(4) {
+    flex: 1;
+  }
+  .filter-search > svg {
+    width: 14px;
+  }
+  .results-bar {
+    font-size: 8px;
+    margin-top: 18px;
+  }
+  .results-bar > div {
+    gap: 8px;
+  }
+  .results-bar select {
+    font-size: 7px;
+    max-width: 120px;
+  }
+  .results-bar button {
+    font-size: 7px;
+  }
+  .pagination {
+    font-size: 8px;
+  }
+  .pagination > div {
+    gap: 10px;
+  }
+  .pagination button {
+    width: 25px;
+    height: 25px;
+  }
+  .library-info {
+    margin-top: 22px;
+    padding: 13px;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .library-info p {
+    font-size: 8px;
+  }
+  .library-info svg {
+    margin-top: 4px;
+    width: 15px;
+  }
+  .empty-state {
+    padding: 35px 21px;
+    min-height: 330px;
+  }
+  .empty-state h2 {
+    font-size: 21px;
+    line-height: 1.4;
+  }
+  .empty-state > p {
+    font-size: 10px;
+  }
+  .empty-state .button {
+    font-size: 9px;
+  }
+  .paths-full .path-card {
+    padding: 23px 22px 0;
+  }
+  .paths-full .path-card h3 {
+    font-size: 21px;
+  }
+  .paths-full .path-card p {
+    font-size: 11px;
+    min-height: 0;
+  }
+  .paths-full .path-topics {
+    margin-top: 19px;
+  }
+  .paths-full .path-topics > span {
+    font-size: 7px;
+  }
+  .paths-full .path-card-foot {
+    margin: 22px -22px 0;
+    padding: 15px 22px;
+    font-size: 9px;
+  }
+  .path-principles {
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin-top: 26px;
+  }
+  .path-principles > div {
+    padding: 20px 0;
+    display: grid;
+    grid-template-columns: 25px 1fr;
+    gap: 8px;
+  }
+  .path-principles h3 {
+    margin: 0;
+    font-size: 12px;
+  }
+  .path-principles p {
+    grid-column: 2;
+    font-size: 10px;
+    max-width: none;
+    margin: 0;
+  }
+  .outlined-count {
+    display: none;
+  }
+  .path-detail-hero {
+    padding: 25px 21px;
+  }
+  .path-detail-hero h1 {
+    font-size: 27px;
+    line-height: 1.3;
+  }
+  .path-detail-hero > p {
+    font-size: 11px;
+  }
+  .path-detail-meta {
+    font-size: 7px;
+    gap: 11px;
+    flex-wrap: wrap;
+  }
+  .path-stage-question {
+    padding: 15px 12px;
+    gap: 10px;
+  }
+  .path-stage-question strong {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .path-stage-question small {
+    font-size: 7px;
+  }
+  .path-stage-question > span:not(.path-check) {
+    font-size: 8px;
+    white-space: nowrap;
+  }
+  .path-stage-question > svg {
+    width: 13px;
+  }
+  .stage-heading h2 {
+    font-size: 14px;
+  }
+  .stage-heading small {
+    font-size: 6px;
+  }
+  .question-topline {
+    margin-bottom: 23px;
+    align-items: center;
+  }
+  .question-topline > div {
+    gap: 11px;
+  }
+  .save-question {
+    font-size: 0;
+    padding: 7px;
+    gap: 0;
+  }
+  .save-question > svg {
+    width: 14px;
+    height: 14px;
+  }
+  .session-counter {
+    font-size: 8px;
+  }
+  .session-counter > span {
+    display: none;
+  }
+  .question-content h1 {
+    font-size: 29px;
+    line-height: 1.25;
+  }
+  .question-meta {
+    font-size: 8px;
+    gap: 7px;
+  }
+  .question-meta > span:last-child {
+    font-size: 8px;
+  }
+  .question-submeta {
+    gap: 14px;
+    padding-bottom: 20px;
+    margin-top: 18px;
+  }
+  .question-submeta .question-id {
+    display: none;
+  }
+  .question-content .difficulty {
+    font-size: 8px;
+  }
+  .question-submeta > span:nth-child(2) {
+    font-size: 8px;
+  }
+  .markdown {
+    font-size: 12px;
+    line-height: 1.95;
+  }
+  .prompt {
+    margin-top: 20px;
+  }
+  .code-block pre {
+    font-size: 9px;
+    padding: 15px 10px;
+  }
+  .line-number {
+    min-width: 23px;
+    font-size: 7px;
+  }
+  .tags {
+    margin-top: 16px;
+  }
+  .tags > span {
+    font-size: 7px;
+  }
+  .hint-box {
+    margin-top: 21px;
+  }
+  .hint-box > button {
+    font-size: 8px;
+    padding: 12px 10px;
+    gap: 6px;
+  }
+  .hint-box > button > span {
+    gap: 6px;
+  }
+  .hint-box > button > span:last-child {
+    font-size: 7px;
+    gap: 4px;
+  }
+  .hint-box > button svg {
+    width: 13px;
+  }
+  .hint-box > p {
+    font-size: 9px;
+    padding: 12px;
+    gap: 10px;
+  }
+  .answer-panel {
+    margin-top: 22px;
+  }
+  .answer-tabs {
+    min-height: 44px;
+    padding: 0 12px;
+    gap: 20px;
+  }
+  .answer-tabs > button {
+    font-size: 9px;
+  }
+  .answer-tabs > button > span,
+  .draft-label {
+    display: none;
+  }
+  .text-answer textarea {
+    padding: 15px;
+    font-size: 11px;
+    min-height: 250px;
+  }
+  .code-answer textarea {
+    font-size: 9px;
+    min-height: 320px;
+  }
+  .editor-toolbar {
+    font-size: 7px;
+    padding: 8px 12px;
+  }
+  .editor-toolbar small {
+    font-size: 6px;
+  }
+  .choice-list {
+    padding: 12px;
+    gap: 9px;
+  }
+  .choice-option {
+    padding: 12px 10px;
+    gap: 9px;
+    font-size: 10px;
+  }
+  .choice-option > input {
+    margin-top: 3px;
+    width: 12px;
+    height: 12px;
+  }
+  .choice-option > svg {
+    width: 13px;
+  }
+  .answer-footer {
+    padding: 12px;
+    gap: 12px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .answer-footer > span {
+    font-size: 7px;
+    max-width: none;
+    line-height: 1.8;
+  }
+  .answer-footer .button {
+    align-self: flex-end;
+    min-height: 33px;
+    font-size: 9px;
+  }
+  .numeric-answer {
+    padding: 21px 15px;
+  }
+  .numeric-answer > input {
+    width: 100%;
+    font-size: 17px;
+  }
+  .numeric-answer small {
+    font-size: 7px;
+    line-height: 1.8;
+  }
+  .feedback-heading {
+    padding: 17px 14px;
+    gap: 10px;
+  }
+  .feedback-heading h2 {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .feedback-heading > span {
+    width: 31px;
+    height: 31px;
+  }
+  .feedback-heading > span > svg {
+    width: 17px;
+  }
+  .feedback-heading p {
+    font-size: 7px;
+  }
+  .feedback-heading > strong {
+    font-size: 21px;
+  }
+  .submitted-answer {
+    padding: 15px;
+  }
+  .solution-label {
+    padding: 20px 15px 0;
+    font-size: 7px;
+  }
+  .solution {
+    padding: 15px 15px 20px;
+    font-size: 11px;
+  }
+  .rubric {
+    padding: 14px;
+    margin: 0 13px 20px;
+  }
+  .rubric h3 {
+    font-size: 12px;
+  }
+  .rubric > div:first-child > p {
+    font-size: 8px;
+  }
+  .rubric-item {
+    font-size: 10px;
+    gap: 9px;
+  }
+  .assess-footer {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 14px;
+  }
+  .assess-footer small {
+    font-size: 7px;
+    margin-right: auto;
+  }
+  .assess-footer .button {
+    font-size: 8px;
+  }
+  .follow-up {
+    padding: 16px 15px;
+    gap: 10px;
+  }
+  .follow-up p {
+    font-size: 10px;
+  }
+  .follow-up > svg {
+    width: 16px;
+  }
+  .references {
+    padding: 18px 15px;
+  }
+  .references > a {
+    font-size: 8px;
+    line-height: 1.7;
+  }
+  .guest-note {
+    padding: 0 15px 18px;
+    font-size: 9px;
+    gap: 8px;
+  }
+  .next-question {
+    padding: 14px 15px;
+  }
+  .next-question .button {
+    font-size: 8px;
+    min-height: 34px;
+  }
+  .next-question .text-link {
+    font-size: 8px;
+  }
+  .correct-answer {
+    padding: 16px 15px 0;
+  }
+  .correct-answer p {
+    font-size: 10px;
+  }
+  .mastery-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .mastery-row {
+    padding: 14px;
+  }
+  .mastery-row strong {
+    font-size: 11px;
+  }
+  .mastery-row > span:last-child {
+    font-size: 13px;
+  }
+  .activity-panel {
+    padding: 18px 14px;
+  }
+  .activity-panel .section-heading {
+    align-items: flex-start;
+  }
+  .activity-panel .small-label {
+    font-size: 5px;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+  }
+  .activity-panel .section-heading h2 {
+    font-size: 13px;
+  }
+  .activity-panel .section-heading p {
+    font-size: 7px;
+    max-width: 210px;
+  }
+  .heatmap {
+    gap: 3px;
+    margin-top: 18px;
+  }
+  .heatmap > div {
+    aspect-ratio: 1.2;
+    border-radius: 2px;
+  }
+  .heatmap-legend {
+    font-size: 7px;
+  }
+  .heatmap-legend > div {
+    font-size: 6px;
+    gap: 4px;
+  }
+  .heatmap-legend i {
+    width: 7px;
+    height: 7px;
+  }
+  .history-row {
+    padding: 13px 11px;
+    gap: 10px;
+  }
+  .history-row strong {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .history-row > div > span {
+    font-size: 7px;
+    line-height: 1.6;
+  }
+  .history-score {
+    width: 32px;
+    height: 31px;
+    font-size: 9px;
+  }
+  .history-row time {
+    font-size: 7px;
+    white-space: nowrap;
+  }
+  .history-row > svg {
+    width: 12px;
+  }
+  .settings-section {
+    padding: 22px 19px;
+  }
+  .settings-section p {
+    font-size: 10px;
+  }
+  .settings-fields {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .settings-section h2 {
+    font-size: 16px;
+  }
+  .settings-section .button {
+    font-size: 9px;
+  }
+  .modal-backdrop {
+    padding: 15px;
+  }
+  .modal {
+    max-height: calc(100dvh - 30px);
+    padding: 26px 23px;
+    border-radius: 9px;
+  }
+  .modal-close {
+    right: 10px;
+    top: 10px;
+  }
+  .auth-modal h2 {
+    font-size: 25px;
+    max-width: 280px;
+  }
+  .auth-graphic {
+    margin-top: 23px;
+    padding: 19px;
+  }
+  .auth-modal > p {
+    font-size: 10px;
+  }
+  .auth-modal form > label {
+    font-size: 10px;
+  }
+  .modal input {
+    height: 42px;
+  }
+  .session-modal h2 {
+    font-size: 25px;
+  }
+  .session-modal > p {
+    font-size: 10px;
+  }
+  .session-fields {
+    gap: 12px;
+  }
+  .session-modal label {
+    font-size: 10px;
+  }
+  .session-summary {
+    font-size: 7px;
+    gap: 7px;
+  }
+  .session-summary > span:first-child {
+    gap: 5px;
+  }
+  .session-summary svg {
+    width: 12px;
+  }
+  .session-modal > .button {
+    font-size: 10px;
+  }
+  .search-modal {
+    padding: 0;
+  }
+  .global-search {
+    padding: 19px 15px;
+    gap: 10px;
+  }
+  .global-search input {
+    font-size: 11px;
+  }
+  .global-results {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .global-results > button {
+    padding: 13px 9px;
+    gap: 10px;
+  }
+  .global-results strong {
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .global-results small {
+    font-size: 7px;
+  }
+  .global-results .difficulty {
+    display: none;
+  }
+  .global-result-icon {
+    width: 28px;
+    height: 28px;
+  }
+  .global-result-icon > svg {
+    width: 15px;
+  }
+  .search-section-label {
+    padding-left: 17px;
+    font-size: 6px;
+  }
+  .search-foot {
+    padding: 13px 16px;
+    font-size: 6px;
+  }
+  .search-foot > button {
+    font-size: 7px;
+  }
+  .toast {
+    bottom: 17px;
+    font-size: 10px;
+    min-width: 280px;
+    max-width: calc(100vw - 30px);
+    padding: 13px 14px;
+    line-height: 1.6;
+  }
+  .attempt-modal h2 {
+    font-size: 23px;
+  }
+  .attempt-modal .button {
+    font-size: 9px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

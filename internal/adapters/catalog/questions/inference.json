@@ -1,0 +1,946 @@
+[
+  {
+    "id": "inference-kv-size",
+    "topic": "inference",
+    "title": "The memory hiding behind every token",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 7,
+    "tags": [
+      "KV cache",
+      "GQA",
+      "Memory sizing"
+    ],
+    "prompt": "A decoder has 32 layers, 8 KV heads per layer, head dimension 128, and FP16 keys and values (2 bytes per element). For **one sequence of 4,096 cached tokens**, how many **MiB** does the KV cache require? Count both K and V. Ignore allocator overhead, block padding, and all model weights.",
+    "solution": "KV bytes are `2 × layers × tokens × KV_heads × head_dim × bytes_per_element`. Substituting gives `2 × 32 × 4,096 × 8 × 128 × 2 = 536,870,912` bytes, or 512 MiB.\n\nUse the number of KV heads, not necessarily the number of query heads: grouped-query attention can share K/V among multiple query heads. Batch concurrency multiplies retained sequence storage, while allocator/block overhead, prefix sharing, and quantized KV formats change realized usage. The weight footprint is a separate budget.",
+    "rubric": [
+      "Count both keys and values across layers and tokens.",
+      "Use KV-head count and two-byte elements.",
+      "Convert bytes to binary MiB and exclude weights."
+    ],
+    "hints": [
+      "There are two cached tensors per layer: K and V.",
+      "One MiB is 2^20 bytes."
+    ],
+    "followUp": "How does doubling concurrent sequences compare with doubling the context length of each sequence?",
+    "references": [
+      {
+        "title": "vLLM · PagedAttention design",
+        "url": "https://docs.vllm.ai/en/latest/design/paged_attention/"
+      }
+    ],
+    "expected": "512"
+  },
+  {
+    "id": "inference-phases",
+    "topic": "inference",
+    "title": "Prefill and decode want different things",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 11,
+    "tags": [
+      "Prefill",
+      "Decode",
+      "Roofline"
+    ],
+    "prompt": "Explain why prompt prefill and single-sequence autoregressive decode can stress a GPU differently. Include parallelism across tokens, model-weight reuse, attention over cached positions, and batch size. Identify at least two reasons the shortcut “prefill is compute-bound, decode is bandwidth-bound” can fail.",
+    "solution": "Prefill processes many known prompt positions together, creating larger matrix operations and more opportunity to reuse weights. Decode generates the next token from the current prefix, so a single sequence exposes less token parallelism and repeatedly accesses weights and KV state. At small batches, this often makes memory movement a prominent limit.\n\nThese are tendencies, not universal classifications. Larger decode batches improve weight reuse and can become compute-limited; long contexts can make KV attention dominate. Small prompts or small models may be launch/communication limited. Quantization, hardware bandwidth, tensor parallel communication, and kernel choices change the balance. Measure arithmetic intensity, achieved utilization, latency, and memory traffic separately for the actual prefill/decode workload.",
+    "rubric": [
+      "Explain known-token prefill parallelism versus autoregressive decode dependency.",
+      "Discuss weights and KV traffic plus batch-size effects.",
+      "Give concrete exceptions and a workload-specific measurement plan."
+    ],
+    "hints": [
+      "How many tokens are known before the phase starts?",
+      "Weights are reused more effectively when a matrix multiplication processes more rows."
+    ],
+    "followUp": "How does grouped-query attention affect decode memory traffic compared with multi-head attention?",
+    "references": [
+      {
+        "title": "vLLM · PagedAttention design",
+        "url": "https://docs.vllm.ai/en/latest/design/paged_attention/"
+      }
+    ]
+  },
+  {
+    "id": "inference-continuous",
+    "topic": "inference",
+    "title": "A batch that changes while it runs",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 14,
+    "tags": [
+      "Continuous batching",
+      "Scheduling"
+    ],
+    "prompt": "Design a decode scheduler for requests with different prompt and output lengths. Explain why a fixed batch wastes capacity after some requests finish, and how continuous batching admits new requests. Include KV allocation, prefill interference, per-request latency, cancellation, and overload admission.",
+    "solution": "A static batch can leave finished slots idle until the longest request completes. Continuous batching reconsiders active work at iteration boundaries, removes completed/cancelled sequences, and admits waiting requests subject to compute and KV capacity. The logical batch changes over time; the implementation still has to manage kernels and memory mappings consistently.\n\nBudget tokens and blocks, not only request count. Reclaim KV state when a request ends, and avoid admitting contexts whose eventual growth cannot be handled under the chosen policy. Large prefills can delay decode iterations, so use explicit prefill chunking or scheduling budgets and evaluate time-to-first-token and inter-token latency separately. Bound the waiting queue, honor deadlines, and define fairness/preemption. Higher aggregate throughput is not sufficient if one class of request is starved.",
+    "rubric": [
+      "Explain dynamic slot reuse at safe iteration boundaries.",
+      "Budget and reclaim KV blocks with context growth in mind.",
+      "Handle prefill/decode interference and latency objectives.",
+      "Include fairness, cancellation, and bounded admission."
+    ],
+    "hints": [
+      "A request count does not tell you how many cached tokens occupy memory.",
+      "New prompts require prefill work before joining steady decode."
+    ],
+    "followUp": "How would you protect interactive short requests from a flood of maximum-context jobs?",
+    "references": [
+      {
+        "title": "vLLM · PagedAttention design",
+        "url": "https://docs.vllm.ai/en/latest/design/paged_attention/"
+      }
+    ]
+  },
+  {
+    "id": "inference-quantization",
+    "topic": "inference",
+    "title": "Half the bits, not always twice the speed",
+    "difficulty": "Advanced",
+    "format": "multi_select",
+    "minutes": 10,
+    "tags": [
+      "Quantization",
+      "Kernels",
+      "Accuracy"
+    ],
+    "prompt": "A team changes a model’s weight storage from FP16 to a 4-bit format and expects every inference metric to improve by exactly 4×. Which statements are correct? Select all that apply.",
+    "solution": "The raw weight representation shrinks by four in the simplified bit count, but scales, zero points, packing, and alignment add metadata. Latency depends on supported kernels, dequantization, batch size, memory traffic, and the hardware’s arithmetic paths. A format can save memory while adding work or failing to accelerate a compute-bound workload.\n\nWeight quantization does not automatically quantize KV state or activations. Accuracy and robustness must be evaluated on representative tasks and distributions; outliers and layer sensitivity matter. Measure time-to-first-token, inter-token latency, throughput, memory, and quality at matched settings. Compression ratio is not an end-to-end speed guarantee.",
+    "rubric": [
+      "Separate raw bit reduction from real storage and kernel execution.",
+      "Recognize unmodified KV/activation budgets.",
+      "Require representative quality and matched performance evaluation."
+    ],
+    "hints": [
+      "Which tensors did the change actually modify?",
+      "A smaller representation can require extra operations to use."
+    ],
+    "followUp": "Why might a weight-only quantization improve small-batch decode more than a large prefill?",
+    "references": [
+      {
+        "title": "vLLM · PagedAttention design",
+        "url": "https://docs.vllm.ai/en/latest/design/paged_attention/"
+      }
+    ],
+    "options": [
+      "All inference latency must fall by exactly 4×.",
+      "Kernel support and dequantization overhead can limit speedup.",
+      "KV cache memory may be unchanged by weight-only quantization.",
+      "Accuracy must be evaluated rather than assumed unchanged."
+    ],
+    "correct": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "id": "inference-speculation",
+    "topic": "inference",
+    "title": "Fast guesses, exact distribution?",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 14,
+    "tags": [
+      "Speculative decoding",
+      "Sampling"
+    ],
+    "prompt": "A small draft model proposes several tokens, and a larger target model verifies them in parallel. Explain why accepting every token that appears in the target’s top-k does **not** generally preserve the target sampling distribution. Describe the role of acceptance probabilities and residual sampling, and the performance conditions under which speculation helps.",
+    "solution": "Top-k membership is not a distribution-correct acceptance rule. For a sampled draft token x from q, exact speculative sampling uses acceptance related to `min(1, p(x)/q(x))`, with a correction distribution proportional to the positive part of `p-q` when a proposal is rejected. Verification and continuation must follow the complete algorithm, including the shared prefix and sampling transforms. Greedy speculative decoding has a different deterministic matching contract.\n\nSpeedup requires verification to amortize several accepted tokens at lower cost than serial target steps. Draft overhead, low acceptance, memory traffic, batch size, and scheduler interactions can erase the benefit. Measure accepted tokens per verification, draft/target cost, end-to-end latency, throughput, and distributional correctness. A fast approximate heuristic is a different product contract and should be labeled as such.",
+    "rubric": [
+      "Explain why top-k acceptance changes the target distribution.",
+      "Describe probability-ratio acceptance and residual correction.",
+      "Distinguish greedy matching from stochastic exactness.",
+      "Evaluate acceptance versus draft and verification overhead."
+    ],
+    "hints": [
+      "Being plausible under p does not mean the draft sampled x with the correct probability.",
+      "Overrepresented draft tokens need a way to be rejected."
+    ],
+    "followUp": "Why can a more accurate but much slower draft model yield less speedup?",
+    "references": [
+      {
+        "title": "Fast Inference from Transformers via Speculative Decoding",
+        "url": "https://arxiv.org/abs/2211.17192"
+      }
+    ]
+  },
+  {
+    "id": "inference-prefix",
+    "topic": "inference",
+    "title": "Shared prefixes, isolated tenants",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 22,
+    "tags": [
+      "Prefix caching",
+      "Multi-tenancy",
+      "KV lifetime"
+    ],
+    "prompt": "Design a prefix KV cache for a multi-tenant inference service. Requests can share a long system prompt, but some prefixes contain private tenant data. Specify the cache identity, model/tokenizer/version boundaries, block ownership and eviction, memory pressure, and the information that hit/miss timing might reveal. Decide when reuse should be tenant-scoped.",
+    "solution": "Reuse only state produced by an equivalent computation: exact token prefix, model and adapter identity, positional configuration, relevant execution settings, and a consistent cache format. A shared text string is not enough if tokenization or model weights differ. Use immutable shared prefix blocks with reference counts or another sound lifetime scheme; private continuations must not mutate a shared block without copy-on-write.\n\nInclude a tenant/security domain in the key when prefix existence or content is private. Cross-tenant timing differences can expose whether a prefix is cached even without returning its bytes. Evaluate isolation against intended sharing benefits. Bound memory, evict only unreferenced entries, and define admission under pressure so caching cannot starve active decoding. Track hit tokens, saved prefill time, fragmentation, eviction, and per-tenant impact. Invalidate through versioned identity rather than hoping every process flushes simultaneously.",
+    "rubric": [
+      "Key exact computational identity including tokens, model, adapter, and positional/version state.",
+      "Use immutable shared blocks with safe ownership, eviction, and private continuation.",
+      "Address tenant isolation and hit/miss timing leakage.",
+      "Bound cache memory and evaluate saved work and per-tenant effects."
+    ],
+    "hints": [
+      "A KV tensor is a function of more than the visible prompt string.",
+      "A tenant might learn that another tenant used a prefix without ever reading the tensor."
+    ],
+    "followUp": "How would partial-block prefix matches interact with copy-on-write and eviction?",
+    "references": [
+      {
+        "title": "vLLM · PagedAttention design",
+        "url": "https://docs.vllm.ai/en/latest/design/paged_attention/"
+      }
+    ]
+  },
+  {
+    "id": "inference-weight-memory",
+    "topic": "inference",
+    "title": "Count weights before runtime overhead",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Memory",
+      "Model weights"
+    ],
+    "prompt": "A model has exactly 7 billion scalar parameters stored at 2 bytes each. What is raw weight storage in decimal GB, excluding all overhead?",
+    "solution": "14 GB: 7×10^9×2 bytes divided by 10^9. This excludes KV cache, activations, quantization metadata, allocator fragmentation, and runtime buffers. Decimal GB differs from GiB, so the result should not be compared directly with a GiB figure without conversion.",
+    "hints": [
+      "Multiply parameter count by bytes per parameter.",
+      "The question uses decimal GB."
+    ],
+    "rubric": [
+      "Compute fourteen GB.",
+      "Exclude runtime state.",
+      "Distinguish GB and GiB."
+    ],
+    "followUp": "Why can a device with nominally similar capacity still fail to load the model?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ],
+    "expected": "14"
+  },
+  {
+    "id": "inference-ttft-boundary",
+    "topic": "inference",
+    "title": "First-token latency includes waiting",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Latency",
+      "Metrics"
+    ],
+    "prompt": "Define time to first token from a client's perspective and explain why measuring only the model's first GPU kernel underestimates it.",
+    "solution": "Client-visible TTFT spans request submission to the first usable output token and can include transport, admission queueing, tokenization, prefill, scheduling, and delivery. A kernel interval covers only part of that boundary. Document the measurement points and whether buffering delays what the user actually sees.",
+    "hints": [
+      "Start from the client's request event.",
+      "The first computed token may not yet be delivered."
+    ],
+    "rubric": [
+      "Define the end-to-end boundary.",
+      "Include queueing and preprocessing.",
+      "Distinguish computation from delivery."
+    ],
+    "followUp": "How could proxy buffering inflate visible TTFT without changing model time?",
+    "references": [
+      {
+        "title": "vLLM · latency metrics",
+        "url": "https://docs.vllm.ai/en/latest/design/metrics/"
+      }
+    ]
+  },
+  {
+    "id": "inference-intertoken",
+    "topic": "inference",
+    "title": "Output cadence differs from first-token time",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Latency",
+      "Streaming"
+    ],
+    "prompt": "After the first output token, a request emits 20 further tokens at constant 25 ms intervals. How much additional time elapses, in milliseconds?",
+    "solution": "500 ms, from 20×25. TTFT is excluded because counting begins at the first token. Real streams can have variable gaps and buffering, so report the distribution and exact token boundaries rather than assuming constant cadence.",
+    "hints": [
+      "There are twenty additional intervals.",
+      "Do not add an unspecified TTFT."
+    ],
+    "rubric": [
+      "Compute 500 ms.",
+      "Exclude initial latency.",
+      "State the constant-spacing assumption."
+    ],
+    "followUp": "How would burst delivery distort an average inter-token metric?",
+    "references": [
+      {
+        "title": "vLLM · token latency",
+        "url": "https://docs.vllm.ai/en/latest/design/metrics/"
+      }
+    ],
+    "expected": "500"
+  },
+  {
+    "id": "inference-cache-purpose",
+    "topic": "inference",
+    "title": "Keep past attention state for later tokens",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "KV cache",
+      "Autoregression"
+    ],
+    "prompt": "What work does a conventional decoder KV cache primarily avoid during autoregressive generation?",
+    "solution": "It stores keys and values for previous tokens so subsequent steps need not recompute those states for the whole prefix. The new query still attends to relevant cached history. The cache consumes memory that grows with retained sequence length and does not eliminate all attention work.",
+    "hints": [
+      "The prefix is reused at every generation step.",
+      "Stored keys and values are not stored final answers."
+    ],
+    "rubric": [
+      "Identify reused key/value states.",
+      "Preserve attention to history.",
+      "Explain cache memory cost."
+    ],
+    "followUp": "Why are queries usually not retained in the same way for ordinary decode?",
+    "references": [
+      {
+        "title": "vLLM · paged attention",
+        "url": "https://docs.vllm.ai/en/latest/design/paged_attention/"
+      }
+    ],
+    "options": [
+      "Recomputing previous tokens' key/value states",
+      "All sampling work",
+      "Every future attention operation",
+      "The need to load model weights"
+    ],
+    "correct": [
+      0
+    ]
+  },
+  {
+    "id": "inference-batch-padding",
+    "topic": "inference",
+    "title": "The longest prompt can waste padded work",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Batching",
+      "Padding"
+    ],
+    "prompt": "A naive batch pads every prompt to the longest prompt's length. Why can mixing one very long prompt with many short ones waste compute, and what alternatives exist?",
+    "solution": "Padding can make kernels process positions that carry no useful tokens for shorter prompts. Bucket by length or use supported packed or variable-length execution. Compare useful-token throughput and user latency; grouping by length can improve efficiency while delaying requests if waiting to form batches is unbounded.",
+    "hints": [
+      "Count padded positions versus real tokens.",
+      "More efficient batches can still wait too long."
+    ],
+    "rubric": [
+      "Explain padding waste.",
+      "Propose bucketing or packed execution.",
+      "Account for batching delay."
+    ],
+    "followUp": "What scheduler metric would reveal short requests waiting behind long prompts?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-throughput-units",
+    "topic": "inference",
+    "title": "Requests per second hides output length",
+    "difficulty": "Foundation",
+    "format": "multi_select",
+    "minutes": 5,
+    "tags": [
+      "Benchmarking",
+      "Throughput"
+    ],
+    "prompt": "Which measurements help make LLM-serving throughput comparisons interpretable?",
+    "solution": "Report input and output token rates, request length distributions, concurrency or offered load, and latency objectives. Requests per second alone can improve merely because outputs are shorter. Include failures and rejected requests so throughput does not hide reduced service quality.",
+    "hints": [
+      "A request can contain very different amounts of work.",
+      "Completed counts need latency and error context."
+    ],
+    "rubric": [
+      "Report token work and request mix.",
+      "Include load and latency.",
+      "Count failures and rejections."
+    ],
+    "followUp": "Why can output tokens per second still hide poor first-token latency?",
+    "references": [
+      {
+        "title": "vLLM · serving benchmarks",
+        "url": "https://docs.vllm.ai/en/latest/cli/bench/serve/"
+      }
+    ],
+    "options": [
+      "Input and output length distributions",
+      "Only successful requests per second",
+      "Token rates alongside latency and errors",
+      "Ignoring rejected requests"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "inference-page-blocks",
+    "topic": "inference",
+    "title": "Round each sequence to whole cache blocks",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Paged attention",
+      "Memory"
+    ],
+    "prompt": "A toy KV allocator uses 16-token blocks. One sequence retains 65 tokens, and blocks are not shared. How many blocks does it need?",
+    "solution": "5, because ceil(65/16)=5. Four blocks cover only 64 tokens; the last block has 15 unused token slots. Paging bounds this internal waste per sequence but does not make allocation overhead or fragmentation universally zero.",
+    "hints": [
+      "Round upward after dividing by sixteen.",
+      "One extra token needs another block."
+    ],
+    "rubric": [
+      "Compute five blocks.",
+      "Identify fifteen unused slots.",
+      "Distinguish bounded waste from zero waste."
+    ],
+    "followUp": "How would shared complete prefix blocks change total allocation across two sequences?",
+    "references": [
+      {
+        "title": "vLLM · cache blocks",
+        "url": "https://docs.vllm.ai/en/latest/design/paged_attention/"
+      }
+    ],
+    "expected": "5"
+  },
+  {
+    "id": "inference-cache-gqa",
+    "topic": "inference",
+    "title": "Fewer KV heads change cache size",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "GQA",
+      "KV cache"
+    ],
+    "prompt": "Two otherwise identical models use 32 versus 8 KV heads with equal layer count, head dimension, tokens, and cache precision. By what factor is the 32-head model's raw KV cache larger?",
+    "solution": "4×, since raw cache size is proportional to KV head count and 32/8=4. Query head count alone is not the cache-head count in grouped-query attention. This compares raw cache storage, not total model memory or guaranteed speedup.",
+    "hints": [
+      "Hold every dimension except KV heads fixed.",
+      "Distinguish query and KV heads."
+    ],
+    "rubric": [
+      "Compute factor four.",
+      "Identify proportionality to KV heads.",
+      "Separate cache and total-memory comparisons."
+    ],
+    "followUp": "What factor would a single KV head produce under the same assumptions?",
+    "references": [
+      {
+        "title": "GQA: Training Generalized Multi-Query Transformer Models",
+        "url": "https://arxiv.org/abs/2305.13245"
+      }
+    ],
+    "expected": "4"
+  },
+  {
+    "id": "inference-flash-io",
+    "topic": "inference",
+    "title": "Avoid writing the whole attention matrix",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "FlashAttention",
+      "Memory traffic"
+    ],
+    "prompt": "Explain how an exact IO-aware attention kernel can reduce memory traffic without changing dense attention into a sparse approximation.",
+    "solution": "It tiles computation and manages intermediate softmax statistics so the full score or probability matrix need not be materialized in high-bandwidth memory. It still computes dense attention's result up to numerical differences. Reduced data movement does not remove the dense algorithm's quadratic arithmetic dependence on sequence length.",
+    "hints": [
+      "Intermediate storage differs from mathematical connectivity.",
+      "Tiling can reuse fast on-chip memory."
+    ],
+    "rubric": [
+      "Explain tiled intermediate handling.",
+      "Preserve dense attention semantics.",
+      "Retain quadratic arithmetic complexity."
+    ],
+    "followUp": "Why can benefits depend on head dimension and hardware memory hierarchy?",
+    "references": [
+      {
+        "title": "FlashAttention",
+        "url": "https://arxiv.org/abs/2205.14135"
+      }
+    ]
+  },
+  {
+    "id": "inference-chunked-prefill",
+    "topic": "inference",
+    "title": "A long prompt can be scheduled in pieces",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Scheduling",
+      "Prefill"
+    ],
+    "prompt": "Design chunked prefill for a server mixing very long prompts and active decoders. What tradeoff does chunk size control?",
+    "solution": "Split prompt processing into bounded chunks and interleave them with decode work according to latency policy. Smaller chunks can reduce long blocking intervals but add scheduling overhead and may reduce kernel efficiency. Preserve attention and position semantics across chunks, and measure both long-prompt TTFT and active-request token gaps.",
+    "hints": [
+      "Prefill can monopolize a scheduling step.",
+      "Chunking changes scheduling, not the prompt's meaning."
+    ],
+    "rubric": [
+      "Bound prefill work per step.",
+      "Preserve model semantics.",
+      "Measure efficiency and both latency classes."
+    ],
+    "followUp": "How could too much decode priority starve new long requests?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-output-reservation",
+    "topic": "inference",
+    "title": "Admission must budget future cache growth",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Admission control",
+      "KV cache"
+    ],
+    "prompt": "A server admits requests based only on current prompt cache size and later runs out of memory during decoding. Design a better admission policy.",
+    "solution": "Account for potential output growth using explicit reservations, conservative budgets, or a scheduler with supported preemption and recomputation policy. Enforce output limits and a finite total memory budget including weights and workspace. Track actual growth and avoid assuming every request ends early because average outputs are short.",
+    "hints": [
+      "Every generated token can extend retained state.",
+      "Average output length is not a hard bound."
+    ],
+    "rubric": [
+      "Budget future growth.",
+      "Include all memory consumers.",
+      "Define output caps and exhaustion behavior."
+    ],
+    "followUp": "What fairness problem can arise when one request reserves a very large maximum output?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-quant-metadata",
+    "topic": "inference",
+    "title": "Four-bit storage has more than four-bit weights",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Quantization",
+      "Memory"
+    ],
+    "prompt": "A toy format packs 1024 weights at 4 bits each and stores one 2-byte scale per group of 32 weights. Ignoring all other metadata, how many bytes are required?",
+    "solution": "576 bytes: weights use 1024×4/8=512 bytes, and 32 scales use 64 bytes. Real formats can add zero points, alignment, padding, and mixed-precision layers. Raw bit width alone therefore understates total model storage.",
+    "hints": [
+      "Count weight bytes and scale groups separately.",
+      "There are thirty-two groups."
+    ],
+    "rubric": [
+      "Compute 512 weight bytes.",
+      "Add 64 scale bytes.",
+      "State omitted format overhead."
+    ],
+    "followUp": "What effective bits per weight does this toy format achieve?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ],
+    "expected": "576"
+  },
+  {
+    "id": "inference-warmup-state",
+    "topic": "inference",
+    "title": "The first request may compile its own path",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Warmup",
+      "Benchmarking"
+    ],
+    "prompt": "Why can a serving benchmark's first requests be much slower than later ones, and how should results expose that difference?",
+    "solution": "Initial work can include model loading, kernel compilation, autotuning, memory allocation, graph capture, and cache population. Report startup and cold-request behavior separately from controlled steady state. Warm representative shapes and document what was warmed; excluding all cold effects without disclosure can misrepresent autoscaling or low-traffic use.",
+    "hints": [
+      "The runtime may lazily initialize a shape.",
+      "Cold starts are user-visible in some deployments."
+    ],
+    "rubric": [
+      "List initialization costs.",
+      "Separate cold and warm measurements.",
+      "Document representative warmup coverage."
+    ],
+    "followUp": "Why might a new sequence length trigger another slow path after warmup?",
+    "references": [
+      {
+        "title": "vLLM · graph warmup",
+        "url": "https://docs.vllm.ai/en/latest/design/cuda_graphs/"
+      }
+    ]
+  },
+  {
+    "id": "inference-stream-disconnect",
+    "topic": "inference",
+    "title": "A vanished client should release owned work",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Cancellation",
+      "Resource lifetime"
+    ],
+    "prompt": "A client disconnects from a streaming response, but generation continues for thousands of tokens. Explain the resource leak and a safe cancellation boundary.",
+    "solution": "Propagate disconnect or deadline signals into request scheduling, stop future token work, and release request-owned cache and reservations once in-flight operations permit it. Coordinate completion so buffers are not reclaimed while kernels still use them. Distinguish cancelled requests in metrics rather than counting unused generation as useful throughput.",
+    "hints": [
+      "Transport closure must reach the scheduler.",
+      "Device work may still hold memory references."
+    ],
+    "rubric": [
+      "Cancel scheduled work.",
+      "Respect in-flight resource lifetimes.",
+      "Release reservations and classify metrics correctly."
+    ],
+    "followUp": "How would shared prefix blocks affect cleanup ownership?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-tensor-parallel",
+    "topic": "inference",
+    "title": "Sharding adds communication to every step",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Tensor parallelism",
+      "Communication"
+    ],
+    "prompt": "Why can spreading a model across more GPUs reduce per-device memory yet fail to improve small-batch decode latency?",
+    "solution": "Tensor parallelism shards computation or weights but introduces communication and synchronization across devices. Small decode steps may not provide enough work to amortize collective latency, especially on slower interconnects. Compare end-to-end latency, memory, and throughput for the intended batch sizes rather than assuming more devices always accelerate one request.",
+    "hints": [
+      "Sharded work needs combined results.",
+      "Tiny kernels may expose communication latency."
+    ],
+    "rubric": [
+      "Explain memory reduction.",
+      "Identify collective overhead.",
+      "Measure workload-specific scaling."
+    ],
+    "followUp": "How does interconnect topology affect placement of tensor-parallel ranks?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-pipeline-bubbles",
+    "topic": "inference",
+    "title": "A stage can wait while another is busy",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Pipeline parallelism",
+      "Utilization"
+    ],
+    "prompt": "Explain pipeline bubbles in multi-stage model serving and why enough concurrent work can improve utilization without necessarily improving one request's latency.",
+    "solution": "Stages can sit idle waiting for dependencies or the next microbatch. Multiple independent requests or microbatches can overlap stages and reduce idle time, but one request still traverses the stages and may queue. Measure stage balance, transfer cost, throughput, and end-to-end latency separately.",
+    "hints": [
+      "Follow stage occupancy over time.",
+      "Overlap increases aggregate work, not necessarily one path's speed."
+    ],
+    "rubric": [
+      "Define idle pipeline bubbles.",
+      "Explain concurrency overlap.",
+      "Separate throughput and request latency."
+    ],
+    "followUp": "What happens when one stage is much slower than the others?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-speculative-work",
+    "topic": "inference",
+    "title": "Accepted guesses still have a draft cost",
+    "difficulty": "Advanced",
+    "format": "numeric",
+    "minutes": 12,
+    "tags": [
+      "Speculative decoding",
+      "Cost model"
+    ],
+    "prompt": "In a toy speculative cycle, draft generation takes 2 ms and target verification takes 4 ms. Exactly three output tokens are accepted per cycle. What is average time per accepted token in milliseconds, ignoring other work?",
+    "solution": "2 ms per token, from (2+4)/3. This is a simplified amortized cycle cost, not a guarantee of production speedup. Compare with target-only decoding and include rejection behavior, scheduling, memory, and any extra correction-token work in a real evaluation.",
+    "hints": [
+      "Add cycle costs before dividing.",
+      "Use accepted output, not proposed tokens."
+    ],
+    "rubric": [
+      "Compute six ms per cycle.",
+      "Divide by three accepted tokens.",
+      "State excluded costs and baseline need."
+    ],
+    "followUp": "How would one accepted token per cycle change the result?",
+    "references": [
+      {
+        "title": "Fast Inference from Transformers via Speculative Decoding",
+        "url": "https://arxiv.org/abs/2211.17192"
+      }
+    ],
+    "expected": "2"
+  },
+  {
+    "id": "inference-cache-key",
+    "topic": "inference",
+    "title": "The same text can produce different states",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Prefix caching",
+      "Correctness"
+    ],
+    "prompt": "Design a prefix-cache key when requests can use different model revisions, adapters, tokenizers, and positional settings.",
+    "solution": "Key reuse on all inputs that determine cached states: exact token prefix, model weights and revision, applicable adapter, and relevant execution or positional configuration. Enforce tenant authorization and supported sharing boundaries. Equal rendered text is insufficient if tokenization or model state differs, and partial-block reuse must follow implementation rules.",
+    "hints": [
+      "Cached tensors depend on more than text.",
+      "Identical strings can tokenize differently."
+    ],
+    "rubric": [
+      "Include model and adapter identity.",
+      "Match tokens and positional configuration.",
+      "Enforce sharing and block rules."
+    ],
+    "followUp": "How should a model rollout invalidate old cached states?",
+    "references": [
+      {
+        "title": "vLLM · prefix-cache identity",
+        "url": "https://docs.vllm.ai/en/latest/design/prefix_caching/"
+      }
+    ]
+  },
+  {
+    "id": "inference-preempt-policy",
+    "topic": "inference",
+    "title": "Freeing cache trades memory for recomputation",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Scheduling",
+      "Preemption"
+    ],
+    "prompt": "Design a preemption policy for memory pressure that can pause generation and later recompute evicted KV state. Include fairness and latency consequences.",
+    "solution": "Choose victims using explicit cost and fairness criteria, preserve enough request state to resume correctly, and account for recomputation work. Bound repeated preemption so one request cannot starve indefinitely. Measure wasted tokens or compute, TTFT, token gaps, and completion latency across request classes rather than reporting only memory relief.",
+    "hints": [
+      "Memory relief creates future work.",
+      "Repeatedly choosing the same victim can starve it."
+    ],
+    "rubric": [
+      "Preserve resumable state.",
+      "Account for recomputation cost.",
+      "Bound starvation and measure latency tradeoffs."
+    ],
+    "followUp": "When could rejecting a new request be better than preempting many active ones?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-shape-capture",
+    "topic": "inference",
+    "title": "A graph can assume buffers stay put",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "GPU graphs",
+      "Execution"
+    ],
+    "prompt": "A GPU graph replays correctly for one batch shape but fails after buffer resizing. Explain which captured assumptions need investigation.",
+    "solution": "Captured execution can depend on compatible shapes, memory addresses, kernel paths, and runtime-supported dynamic behavior. Resizing or replacing buffers can invalidate those assumptions. Use supported graph variants or stable preallocated buffers with correct bounds, and validate against eager execution across the allowed shape range.",
+    "hints": [
+      "A replay is not a fresh interpretation of arbitrary Python state.",
+      "Buffer addresses can be part of capture."
+    ],
+    "rubric": [
+      "Identify shape and address assumptions.",
+      "Use supported stable execution contracts.",
+      "Compare with eager results across cases."
+    ],
+    "followUp": "Why does allocating the same number of bytes not guarantee the same captured address?",
+    "references": [
+      {
+        "title": "vLLM · CUDA graphs",
+        "url": "https://docs.vllm.ai/en/latest/design/cuda_graphs/"
+      }
+    ]
+  },
+  {
+    "id": "inference-accuracy-regression",
+    "topic": "inference",
+    "title": "A smaller model file can hide quality loss",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Quantization",
+      "Evaluation"
+    ],
+    "prompt": "Plan validation before replacing a full-precision model with a quantized version. Include workloads where small numerical changes matter.",
+    "solution": "Compare held-out task quality, sensitive slices, long contexts, structured outputs, and numerical behavior using consistent prompts and decoding. Measure memory, latency, and throughput on actual hardware as well as calibration-data representativeness. Define acceptable regressions and keep rollback available; storage reduction alone does not establish an equivalent service.",
+    "hints": [
+      "Quality and performance require separate measurements.",
+      "Calibration data may miss difficult distributions."
+    ],
+    "rubric": [
+      "Measure representative and sensitive quality.",
+      "Benchmark real hardware.",
+      "Define regression limits and rollback."
+    ],
+    "followUp": "Why can an average score hide a severe structured-output failure?",
+    "references": [
+      {
+        "title": "vLLM · optimization and tuning",
+        "url": "https://docs.vllm.ai/en/latest/configuration/optimization/"
+      }
+    ]
+  },
+  {
+    "id": "inference-disaggregated-cost",
+    "topic": "inference",
+    "title": "Separate phases require moving their state",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Disaggregated serving",
+      "KV transfer"
+    ],
+    "prompt": "Design a comparison of colocated versus disaggregated prefill and decode. What must be included besides the GPU kernel times?",
+    "solution": "Include KV transfer volume and bandwidth, routing and queueing, placement, failure handling, admission, and separate pool utilization. Measure end-to-end TTFT and token cadence under realistic prompt-output mixes. Disaggregation can isolate competing work but adds state movement and operational coordination; validate the net effect rather than summing isolated best-case kernels.",
+    "hints": [
+      "Decode needs the state prefill produced.",
+      "Separate pools can be imbalanced."
+    ],
+    "rubric": [
+      "Account for KV transfer and routing.",
+      "Measure both pools under realistic load.",
+      "Evaluate end-to-end latency and failure handling."
+    ],
+    "followUp": "When might a slow interconnect erase the phase-isolation benefit?",
+    "references": [
+      {
+        "title": "vLLM · disaggregated prefill",
+        "url": "https://docs.vllm.ai/en/latest/features/disagg_prefill/"
+      }
+    ]
+  },
+  {
+    "id": "inference-slo-goodput",
+    "topic": "inference",
+    "title": "Fast tokens can miss the service objective",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Benchmarking",
+      "Goodput"
+    ],
+    "prompt": "Define serving goodput when requests count as useful only if both TTFT and token-gap objectives are met. How should overload be tested?",
+    "solution": "Count work from requests satisfying the declared joint latency and correctness criteria, while also reporting all admitted, failed, and rejected demand. Sweep offered load with a workload model that does not hide stalls, and show the point where objectives fail. Raw tokens per second can rise even as useful completion falls.",
+    "hints": [
+      "Useful output needs a declared acceptance rule.",
+      "A closed-loop client can reduce load during stalls."
+    ],
+    "rubric": [
+      "Define joint objective-qualified work.",
+      "Include failures and rejection.",
+      "Sweep realistic offered load without hiding pauses."
+    ],
+    "followUp": "How would heterogeneous prompt and output lengths change the report?",
+    "references": [
+      {
+        "title": "vLLM · goodput metrics",
+        "url": "https://docs.vllm.ai/en/latest/cli/bench/serve/"
+      }
+    ]
+  },
+  {
+    "id": "inference-adapter-isolation",
+    "topic": "inference",
+    "title": "One scheduler serves many model variants",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Adapters",
+      "Multi-tenancy"
+    ],
+    "prompt": "Design multi-adapter serving where tenants use different LoRA adapters. Cover scheduling, cache identity, capacity, and request isolation.",
+    "solution": "Include adapter identity in execution and cache compatibility, manage a bounded loaded-adapter set, and schedule according to supported batching constraints. Apply authorization to adapter selection and protect request data across tenants. Measure load and eviction costs, fairness, and quality against isolated runs; a shared base model does not make adapter state interchangeable.",
+    "hints": [
+      "Adapter choice changes effective weights.",
+      "Loaded variants consume memory and warmup time."
+    ],
+    "rubric": [
+      "Preserve adapter-correct execution and caching.",
+      "Bound loading and eviction.",
+      "Enforce tenant selection and compare isolated quality."
+    ],
+    "followUp": "How could frequent adapter churn affect p99 first-token latency?",
+    "references": [
+      {
+        "title": "vLLM · LoRA adapters",
+        "url": "https://docs.vllm.ai/en/latest/features/lora/"
+      }
+    ]
+  }
+]

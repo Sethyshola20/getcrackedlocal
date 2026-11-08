@@ -1,0 +1,314 @@
+{
+  "id": "os",
+  "topic": "os",
+  "title": "Operating systems: processes, memory, and I/O",
+  "description": "Connect application behavior to kernel mechanisms through processes, virtual memory, scheduling, filesystems, and Linux I/O experiments.",
+  "lessons": [
+    {
+      "id": "lesson-os-processes-syscalls",
+      "moduleId": "os-1",
+      "kind": "concept",
+      "title": "Processes, threads, and system-call boundaries",
+      "summary": "Distinguish a protection boundary from a scheduling unit",
+      "objectives": [
+        "Distinguish a protection boundary from a scheduling unit.",
+        "Explain the work performed by a system call."
+      ],
+      "body": "## Core idea\n\nA process provides an address-space and resource context; threads execute within that context and share many process resources. Kernel entry allows controlled access to privileged operations. A system call is not necessarily a context switch to another process, and a context switch is not necessarily a system call. Isolation protects mappings and permissions, while shared memory deliberately creates communication obligations.\n\n## Worked example\n\nTwo threads in one process can access the same heap allocation. Two unrelated processes cannot ordinarily dereference each other’s virtual pointers, even when the numeric addresses match. A read system call may complete from cached data without switching to another user process.\n\n## Try it\n\nDraw two processes with two threads each. Label private mappings, shared mappings, file descriptors, stacks, and the kernel boundary crossed by a file read.\n\n## Check your work\n\nThe diagram separates resources from execution state. Explain why a pointer sent through an IPC message is not automatically useful in the receiving address space.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 15,
+      "questionIds": [
+        "os-process-thread",
+        "os-syscall-boundary",
+        "os-permissions"
+      ]
+    },
+    {
+      "id": "lesson-os-virtual-addresses",
+      "moduleId": "os-1",
+      "kind": "concept",
+      "title": "Virtual memory is a mapping contract",
+      "summary": "Separate virtual address space from resident physical memory",
+      "objectives": [
+        "Separate virtual address space from resident physical memory.",
+        "Trace permissions and translation for an access."
+      ],
+      "body": "## Core idea\n\nA virtual address identifies a location in a process mapping, not a physical RAM offset. Page tables connect virtual pages to physical frames and permissions; the TLB caches translations. A TLB miss and a page fault are different events. Large virtual reservations may consume little resident memory until touched, while permission checks can fault even when a physical page exists.\n\n## Worked example\n\nWith an assumed 4 KiB page size, address 0x12345 has offset 0x345 in virtual page 0x12. Translation replaces the page portion with a frame while preserving the offset; the access must still be permitted.\n\n## Try it\n\nTranslate several synthetic addresses through a small page table. Include a missing mapping, read-only mapping, and mapped-but-not-present page. Predict the kind of handling required.\n\n## Check your work\n\nDistinguish invalid access from a recoverable demand fault. State the assumed page size and do not confuse virtual reservation, resident pages, and memory limits.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 15,
+      "questionIds": [
+        "os-virtual-resident",
+        "os-page-count",
+        "os-mmap-truncate"
+      ]
+    },
+    {
+      "id": "lesson-os-execution-states",
+      "moduleId": "os-1",
+      "kind": "concept",
+      "title": "Running, runnable, and blocked are different",
+      "summary": "Explain why a thread can consume time without using a CPU",
+      "objectives": [
+        "Explain why a thread can consume time without using a CPU.",
+        "Distinguish blocking from busy waiting."
+      ],
+      "body": "## Core idea\n\nA running thread currently executes. A runnable thread could execute but waits for scheduling. A blocked thread waits for an event such as I/O or synchronization. Wall time includes all of these intervals; CPU time measures execution. Busy waiting consumes CPU while checking a condition and can delay the thread that would satisfy it, especially under oversubscription.\n\n## Worked example\n\nA request taking 100 ms with 5 ms of CPU time may spend most time blocked or waiting to run. Adding CPU cores helps only if the limiting interval involves CPU availability and the workload can use them.\n\n## Try it\n\nCreate a timeline for a request that parses, waits on a lock, reads from a socket, and computes a response. Label running, runnable, and blocked intervals.\n\n## Check your work\n\nChoose measurements that separate these states. High latency with low CPU use should lead to a wait or scheduling hypothesis, not an automatic claim that the processor is slow.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 15,
+      "questionIds": [
+        "os-context-switch",
+        "os-load-average",
+        "os-monotonic-time"
+      ]
+    },
+    {
+      "id": "lesson-os-fault",
+      "title": "A page fault does not imply a disk read",
+      "summary": "Virtual memory · Page faults",
+      "body": "## The problem to understand\n\nA process accesses an address in a valid mapping and takes a page fault. Which explanations are possible on a demand-paged OS? Select all that apply. The question concerns the fault itself, not a TLB miss handled entirely by hardware.\n\n## The mental model\n\nA valid mapping can fault on its first access because a physical page has not yet been installed. A write to a copy-on-write mapping can fault so the kernel can allocate and copy a private page. File-backed data absent from memory can also require I/O. Thus not all page faults are disk events, and a valid virtual address does not guarantee a present writable page-table entry.\n\nA TLB miss is a translation-cache miss; on hardware with page-table walking, it may be resolved without a kernel page-fault handler. Invalid permissions or unmapped addresses can also fault, but those do not satisfy the valid-access premise.\n\n## Check your understanding\n\n- Recognize demand-zero and copy-on-write faults.\n- Distinguish resident-memory handling from I/O-backed faults.\n- Separate hardware TLB misses from OS-handled page faults.\n\n## Think one step further\n\nWhy can pre-touching a large arena improve tail latency but increase startup time and memory commitment?\n\n## Primary reading\n\n- [Linux kernel documentation](https://docs.kernel.org/)",
+      "minutes": 4,
+      "questionIds": [
+        "os-fault"
+      ],
+      "moduleId": "os-1",
+      "kind": "workshop",
+      "objectives": [
+        "Recognize demand-zero and copy-on-write faults.",
+        "Distinguish resident-memory handling from I/O-backed faults."
+      ]
+    },
+    {
+      "id": "lesson-os-scheduling-fairness",
+      "moduleId": "os-2",
+      "kind": "concept",
+      "title": "Scheduling, priorities, and oversubscription",
+      "summary": "Predict contention when runnable threads exceed CPUs",
+      "objectives": [
+        "Predict contention when runnable threads exceed CPUs.",
+        "Separate scheduler policy from application fairness."
+      ],
+      "body": "## Core idea\n\nSchedulers choose runnable work according to policy and constraints. More threads can hide blocking but also increase scheduling, cache disruption, and contention. Priorities do not remove dependency chains: high-priority work can wait for lower-priority owners. CPU affinity controls eligible CPUs but can reduce flexibility and create local overload. Exact policy details depend on the OS and configuration.\n\n## Worked example\n\nEight CPU-bound workers pinned to two CPUs cannot all execute simultaneously. If one holds a shared lock while descheduled, others may wait despite having nominally high priority.\n\n## Try it\n\nPlan an experiment varying CPU-bound worker count from one to twice the available CPUs. Record throughput, CPU time, context switches, and request latency.\n\n## Check your work\n\nKeep total work fixed and report affinity and available CPU quota. Explain whether throughput saturation comes from CPU capacity or a shared serialization point.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 15,
+      "questionIds": [
+        "os-priority-policy",
+        "os-cgroup-throttle"
+      ]
+    },
+    {
+      "id": "lesson-os-descriptors-io",
+      "moduleId": "os-2",
+      "kind": "concept",
+      "title": "File descriptors, short I/O, and readiness",
+      "summary": "Handle partial reads and writes correctly",
+      "objectives": [
+        "Handle partial reads and writes correctly.",
+        "Distinguish readiness notification from completed work."
+      ],
+      "body": "## Core idea\n\nA file descriptor is a process-local handle referring to an open kernel object. Reads and writes can transfer fewer bytes than requested. Readiness indicates that an operation can make progress under the relevant API semantics; another action may change that condition before the call. Nonblocking loops handle would-block explicitly, while EOF is a distinct state. Descriptor reuse also requires care when events outlive a connection.\n\n## Worked example\n\nA nonblocking write of a 1,000-byte response might accept 300 bytes. Retain the remaining 700 and resume later. Treating the call as an all-or-nothing message send loses data.\n\n## Try it\n\nWrite pseudocode for a framed socket reader with a maximum frame length, partial-header handling, EOF, and would-block. Identify ownership of its buffer and descriptor.\n\n## Check your work\n\nThe reader never assumes a single read equals a frame. It rejects oversized lengths before allocation and has a clear close path even when a frame ends halfway through EOF.\n\n## Primary reading\n\n- [Linux epoll manual](https://man7.org/linux/man-pages/man7/epoll.7.html)",
+      "minutes": 15,
+      "questionIds": [
+        "os-fd-dup",
+        "os-pipe-eof",
+        "os-short-write",
+        "os-io-submission"
+      ]
+    },
+    {
+      "id": "lesson-os-cow",
+      "title": "Forked memory, counted carefully",
+      "summary": "Copy on write · Memory accounting",
+      "body": "## The problem to understand\n\nA parent has 128 MiB of private anonymous data, fully resident in 4 KiB pages. After fork, the child writes one byte in **8,192 distinct pages** while the parent stays alive and does not write. Ignore page tables, huge pages, allocator metadata, and zero-page optimizations. How much **additional physical data memory in MiB** is required by these child writes?\n\n## The mental model\n\nEach first write to a distinct shared page requires a private 4 KiB copy. The extra data memory is `8,192 × 4,096 = 33,554,432` bytes, or 32 MiB. Writing just one byte still copies at page granularity under these assumptions.\n\nImmediately after fork the two processes can share the original physical pages through copy-on-write mappings. Per-process RSS can count shared resident pages in both processes, so summing RSS is not a reliable way to measure unique physical memory. The question asks for the additional copies, not total RSS or virtual address space.\n\n## Check your understanding\n\n- Count one copied page per distinct modified page.\n- Use 4 KiB pages and binary MiB units.\n- Distinguish incremental physical allocation from summed RSS.\n\n## Think one step further\n\nWhat assumptions break if transparent huge pages are enabled?\n\n## Primary reading\n\n- [Linux kernel documentation](https://docs.kernel.org/)",
+      "minutes": 4,
+      "questionIds": [
+        "os-cow"
+      ],
+      "moduleId": "os-2",
+      "kind": "workshop",
+      "objectives": [
+        "Count one copied page per distinct modified page.",
+        "Use 4 KiB pages and binary MiB units."
+      ]
+    },
+    {
+      "id": "lesson-os-epoll",
+      "title": "The socket that never woke again",
+      "summary": "epoll · Nonblocking I/O",
+      "body": "## The problem to understand\n\nA Linux event loop uses edge-triggered epoll on a nonblocking TCP socket. After each readability event it calls recv only once. Under load, unread bytes remain but the connection appears to stall. Explain the bug, provide the drain-loop behavior including error cases, and discuss fairness across busy sockets.\n\n## The mental model\n\nEdge-triggered readiness reports transitions; it is not a promise to keep notifying while unread data remains. The handler should read repeatedly until recv returns EAGAIN/EWOULDBLOCK. A positive result supplies bytes, zero indicates orderly peer shutdown, EINTR generally warrants retry, and other errors need explicit connection handling. TCP bytes must still be framed by the application.\n\nA permanently busy socket can monopolize a naive drain loop. If using a per-dispatch work budget, preserve readiness in an application runnable queue so work resumes even without another kernel edge. With one-shot registration, rearming must follow a disciplined protocol. The nonblocking flag is essential: draining a blocking descriptor could stall the entire event loop.\n\n## Check your understanding\n\n- Explain edge-triggered transitions and the need to drain.\n- Handle bytes, EOF, EINTR, EAGAIN, and fatal errors.\n- Preserve readiness when imposing a fairness budget.\n\n## Think one step further\n\nHow does EPOLLONESHOT help multiple event-loop threads avoid concurrent ownership of one connection?\n\n## Primary reading\n\n- [Linux man-pages · epoll](https://man7.org/linux/man-pages/man7/epoll.7.html)",
+      "minutes": 5,
+      "questionIds": [
+        "os-epoll"
+      ],
+      "moduleId": "os-2",
+      "kind": "workshop",
+      "objectives": [
+        "Explain edge-triggered transitions and the need to drain.",
+        "Handle bytes, EOF, EINTR, EAGAIN, and fatal errors."
+      ]
+    },
+    {
+      "id": "lesson-os-filesystem-crashes",
+      "moduleId": "os-3",
+      "kind": "concept",
+      "title": "Filesystem operations have crash boundaries",
+      "summary": "Separate visibility from persistence",
+      "objectives": [
+        "Separate visibility from persistence.",
+        "State the durability steps of a replace-file protocol."
+      ],
+      "body": "## Core idea\n\nA successful write can make data available through caches before it reaches persistent storage. Rename can provide an atomic namespace transition under applicable filesystem rules without by itself proving crash durability. A durable replace protocol on a supported local filesystem may require writing a temporary file, syncing it, renaming it, and syncing the containing directory. Device, filesystem, and mount semantics remain part of the contract.\n\n## Worked example\n\nA settings update can appear successful, then disappear after power loss if only the in-memory directory update was observed. Syncing file contents alone does not necessarily persist the new directory entry.\n\n## Try it\n\nDraw crash points before and after every step in a replace-file sequence. State which old or new version may be recoverable at each point.\n\n## Check your work\n\nThe protocol documents its platform assumptions and distinguishes atomic visibility from durability. It handles errors at every step and never acknowledges a stronger guarantee than the completed operations support.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 15,
+      "questionIds": [
+        "os-rename-durable"
+      ]
+    },
+    {
+      "id": "lesson-os-synchronization-waits",
+      "moduleId": "os-3",
+      "kind": "concept",
+      "title": "Mutexes, condition variables, and predicates",
+      "summary": "Wait on a predicate rather than a notification alone",
+      "objectives": [
+        "Wait on a predicate rather than a notification alone.",
+        "Avoid lock-order cycles in a multi-lock design."
+      ],
+      "body": "## Core idea\n\nA mutex protects an invariant, and a condition variable coordinates waiting for a predicate to become true. Check the predicate while holding the lock and recheck after waking, since wakeups do not transfer the application condition permanently. Define a consistent order for multiple locks and avoid waiting on external work while holding a lock needed to complete that work.\n\n## Worked example\n\nA consumer waits while a queue is empty. A producer enqueues under the lock and notifies. If another consumer takes the item first, the awakened consumer must recheck rather than pop an empty queue.\n\n## Try it\n\nWrite a bounded queue with not-empty and not-full predicates. Add a shutdown flag to both waiting conditions, then draw the lock order for any secondary statistics lock.\n\n## Check your work\n\nAll waits use loops around predicates. Shutdown wakes both producers and consumers, and no path acquires locks in the reverse of the documented order.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 15,
+      "questionIds": [
+        "os-futex-state",
+        "os-signal-safety"
+      ]
+    },
+    {
+      "id": "lesson-os-durability",
+      "title": "The acknowledgment that survived only in RAM",
+      "summary": "fsync · Crash consistency",
+      "body": "## The problem to understand\n\nA service writes a new configuration to `config.tmp`, renames it to `config`, and returns success. A power failure can occur immediately after the acknowledgment. Explain atomic visibility versus durability. Give a filesystem-oriented protocol for replacing a file durably, and state the storage/filesystem assumptions that prevent an absolute universal guarantee.\n\n## The mental model\n\nRename can make the namespace change atomically visible, but atomic visibility does not guarantee persistence after power loss. A typical local-filesystem replacement protocol writes the complete temporary file, checks write errors, fsyncs the temporary file, renames it over the destination in the same filesystem, then fsyncs the containing directory to persist the namespace update. Return success only after required synchronization succeeds.\n\nThe protocol must account for metadata, permissions, cleanup, and platform behavior. The exact guarantee depends on the filesystem, mount options, OS APIs, and whether the storage stack honestly implements flushes and power-loss protection. Buffered writes being accepted by the kernel are not the same as bytes reaching durable media. Cross-filesystem rename is a different operation and does not provide this simple atomic replacement contract.\n\n## Check your understanding\n\n- Separate atomic namespace visibility from crash durability.\n- Synchronize file contents before rename and directory metadata afterward.\n- State filesystem/storage assumptions and handle synchronization errors.\n\n## Think one step further\n\nWhat additional ordering is needed when replacing two related files that must change together?\n\n## Primary reading\n\n- [Linux man-pages · fsync](https://man7.org/linux/man-pages/man2/fsync.2.html)",
+      "minutes": 5,
+      "questionIds": [
+        "os-durability"
+      ],
+      "moduleId": "os-3",
+      "kind": "workshop",
+      "objectives": [
+        "Separate atomic namespace visibility from crash durability.",
+        "Synchronize file contents before rename and directory metadata afterward."
+      ]
+    },
+    {
+      "id": "lesson-os-inversion",
+      "title": "The highest-priority thread runs last",
+      "summary": "Scheduling · Priority inversion",
+      "body": "## The problem to understand\n\nA low-priority thread holds mutex M. A high-priority thread blocks on M. A medium-priority CPU-bound thread then prevents the low-priority owner from running on the relevant CPU. Explain why increasing the high-priority thread’s priority does not solve the problem, compare inheritance with shorter critical sections, and identify limits of each repair.\n\n## The mental model\n\nThe high-priority thread is blocked and cannot run until the low-priority owner releases M. The medium-priority thread can preempt that owner, indirectly delaying the highest-priority thread: priority inversion. Raising the blocked thread’s priority does not make the lock owner progress.\n\nPriority inheritance temporarily raises an owner to the priority of a blocked waiter, potentially propagating through supported lock chains. It requires scheduler and mutex support and does not fix arbitrary blocking I/O or deadlocks inside critical sections. Shorter bounded critical sections reduce exposure and worst-case blocking but do not by themselves enforce a scheduling protocol. Real-time analysis must also account for interrupt activity, preemption rules, CPU affinity, and other lock dependencies.\n\n## Check your understanding\n\n- Trace the blocked waiter and runnable low-priority owner.\n- Explain how inheritance lets the owner finish.\n- Discuss bounded critical sections and limits of inheritance.\n\n## Think one step further\n\nHow does priority-ceiling locking change the analysis compared with inheritance?\n\n## Primary reading\n\n- [Linux kernel documentation](https://docs.kernel.org/)",
+      "minutes": 5,
+      "questionIds": [
+        "os-inversion"
+      ],
+      "moduleId": "os-3",
+      "kind": "workshop",
+      "objectives": [
+        "Trace the blocked waiter and runnable low-priority owner.",
+        "Explain how inheritance lets the owner finish."
+      ]
+    },
+    {
+      "id": "lesson-os-resource-limits",
+      "moduleId": "os-4",
+      "kind": "concept",
+      "title": "Resource limits and pressure change failure modes",
+      "summary": "Distinguish per-process, container, and host resource pressure",
+      "objectives": [
+        "Distinguish per-process, container, and host resource pressure.",
+        "Budget descriptors, memory, and concurrency together."
+      ],
+      "body": "## Core idea\n\nA process can fail before a host is globally exhausted. File descriptor limits, memory control groups, CPU quotas, and address-space limits constrain different resources. Memory pressure can trigger reclaim and faults before an allocation fails or a process is killed. Buffers and concurrency multiply each other, so a per-request allocation must be considered alongside the maximum number of live requests.\n\n## Worked example\n\nAt an assumed 256 KiB per active request, 4,000 concurrent requests need about 1,000 MiB for those buffers alone. Reducing queue storage does not help if an earlier stage allocates the entire buffer before admission.\n\n## Try it\n\nCreate a resource ledger for a socket service: descriptors, request buffers, worker stacks, queued data, and caches. Define admission behavior when each budget is reached.\n\n## Check your work\n\nThe budget counts all owners, including in-flight work and retained caches. Observability identifies which limit was hit instead of labeling every failure as host memory exhaustion.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 15,
+      "questionIds": [
+        "os-memory-pressure",
+        "os-sandbox-boundary"
+      ]
+    },
+    {
+      "id": "lesson-os-diagnosis-lab",
+      "moduleId": "os-4",
+      "kind": "workshop",
+      "title": "Diagnose an I/O stall with competing hypotheses",
+      "summary": "Collect evidence that separates CPU, lock, and I/O delays",
+      "objectives": [
+        "Collect evidence that separates CPU, lock, and I/O delays.",
+        "Change one suspected bottleneck at a time."
+      ],
+      "body": "## Core idea\n\nBegin with an observable symptom, a timeline, and several plausible explanations. Process metrics, syscall traces, CPU samples, and scheduler or I/O events reveal different layers. Instrumentation has overhead and may need sampling or a smaller reproduction. A correlation between disk activity and latency is useful, but a controlled intervention provides stronger causal evidence.\n\n## Worked example\n\nA slow response might wait on a mutex held by a thread doing disk I/O. Increasing storage bandwidth may help less than moving the I/O outside the lock. A trace of the waiting thread alone can miss the owner dependency.\n\n## Try it\n\nDesign a local reproduction with a deliberately slow file operation. Compare lock scope, worker count, and warm versus cold data while recording request timelines.\n\n## Check your work\n\nThe report names an observation that rejects each alternative hypothesis. It reports instrumentation and cache conditions and does not infer persistence from low write latency.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 25,
+      "questionIds": [
+        "os-page-cache",
+        "os-thp-tradeoff"
+      ]
+    },
+    {
+      "id": "lesson-os-numa",
+      "title": "Your memory is on the other socket",
+      "summary": "NUMA · Page placement · Tail latency",
+      "body": "## The problem to understand\n\nA two-socket Linux server preallocates a large arena on its main thread, then starts workers pinned evenly across both sockets. Workers on the second socket have much worse tail latency. Design an investigation and placement strategy. Consider first-touch policy, allocator reuse, shared data, migration, huge pages, and the cost of imposing affinity.\n\n## The mental model\n\nEstablish the NUMA topology, CPU affinity, memory policy, and actual page placement rather than assuming allocation calls choose the eventual node. Under common first-touch policies, initialization by one pinned main thread can fault most pages onto that thread’s node. Remote workers then access memory through an inter-socket path.\n\nPartition the arena by worker or node, initialize each partition on its intended node, and align queue and object ownership with that partition. Measure local/remote accesses, bandwidth, page faults, migrations, queue delays, and full request latency. Interleave intentionally shared read-mostly memory only when that tradeoff helps. Check allocator reuse and kernel balancing, since both can alter placement over time. Huge pages change placement granularity and fault costs. Affinity can improve locality while reducing scheduling flexibility; evaluate asymmetric load and failover, not just a balanced synthetic benchmark.\n\n## Check your understanding\n\n- Verify actual NUMA topology, policy, and page placement.\n- Explain first-touch initialization and propose ownership-aligned placement.\n- Measure remote memory, migration, faults, and end-to-end tails.\n- Discuss shared memory, huge-page granularity, and affinity tradeoffs.\n\n## Think one step further\n\nWould interleaving every page across sockets improve a workload with strictly per-worker ownership?\n\n## Primary reading\n\n- [Linux kernel · NUMA memory policy](https://docs.kernel.org/admin-guide/mm/numa_memory_policy.html)",
+      "minutes": 10,
+      "questionIds": [
+        "os-numa"
+      ],
+      "moduleId": "os-4",
+      "kind": "workshop",
+      "objectives": [
+        "Verify actual NUMA topology, policy, and page placement.",
+        "Explain first-touch initialization and propose ownership-aligned placement."
+      ]
+    },
+    {
+      "id": "lesson-os-io-service-capstone",
+      "moduleId": "os-4",
+      "kind": "capstone",
+      "title": "Capstone: an observable, bounded I/O service",
+      "summary": "Integrate memory, readiness, scheduling, and persistence contracts",
+      "objectives": [
+        "Integrate memory, readiness, scheduling, and persistence contracts.",
+        "Demonstrate behavior under resource limits and crash scenarios."
+      ],
+      "body": "## Core idea\n\nDesign or implement a local framed-record service with bounded connections, partial-I/O handling, a fixed memory budget, and an append log. Define exactly when a record is acknowledged and whether that means accepted, visible, or durable. Use explicit shutdown and recovery states, and make Linux-specific assumptions visible.\n\n## Worked example\n\nA slow client holds an incomplete frame while a log flush stalls. Admission limits must stop these two conditions from multiplying into unbounded buffers and blocked workers.\n\n## Try it\n\nDeliver an implementation or executable model, a resource ledger, and tests for short I/O, disconnect, oversized frames, full queues, and restart recovery. Reproduce one bottleneck with a controlled delay and evaluate one repair.\n\n## Check your work\n\nReview bounded memory and descriptors, no silent truncation, documented acknowledgement semantics, and reproducible diagnostics. If a crash test uses process termination rather than power loss, state the narrower guarantee it demonstrates.\n\n## Primary reading\n\n- [Linux memory-management concepts](https://docs.kernel.org/admin-guide/mm/concepts.html)\n- [Linux manual pages](https://man7.org/linux/man-pages/)",
+      "minutes": 60,
+      "questionIds": [
+        "os-zombie-child",
+        "os-failure-injection"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Read basic C or systems pseudocode.",
+    "Understand pointers, threads, and binary size units."
+  ],
+  "outcomes": [
+    "Explain process isolation, system calls, and scheduling costs.",
+    "Trace virtual addresses through mappings, page faults, and copy-on-write.",
+    "Build correct I/O and durability protocols with explicit platform assumptions.",
+    "Diagnose a resource-constrained service using controlled experiments."
+  ],
+  "modules": [
+    {
+      "id": "os-1",
+      "title": "Kernel boundaries and memory",
+      "description": "Establish processes, virtual addresses, and execution states.",
+      "level": "Foundation"
+    },
+    {
+      "id": "os-2",
+      "title": "Scheduling and I/O",
+      "description": "Study runnable work, readiness, and shared resources.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "os-3",
+      "title": "Persistence and contention",
+      "description": "Reason about crash boundaries and lock dependencies.",
+      "level": "Advanced"
+    },
+    {
+      "id": "os-4",
+      "title": "Resource-aware systems",
+      "description": "Combine limits, locality, measurement, and service design.",
+      "level": "Expert"
+    }
+  ]
+}

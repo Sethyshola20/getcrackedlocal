@@ -1,0 +1,314 @@
+{
+  "id": "architecture",
+  "topic": "architecture",
+  "title": "Computer architecture: a performance reasoning toolkit",
+  "description": "Connect instructions, caches, pipelines, translation, and multicore behavior to controlled performance experiments.",
+  "lessons": [
+    {
+      "id": "lesson-architecture-isa-microarchitecture",
+      "moduleId": "architecture-1",
+      "kind": "concept",
+      "title": "An ISA contract is not a performance model",
+      "summary": "Separate architectural behavior from implementation details",
+      "objectives": [
+        "Separate architectural behavior from implementation details.",
+        "Explain why instruction count alone cannot predict time."
+      ],
+      "body": "## Core idea\n\nAn instruction set specifies observable operations and rules, while a microarchitecture implements them using pipelines, execution units, and caches. A compiler transforms source into instructions under language rules. Two CPUs implementing an ISA can differ substantially in latency and throughput. Undefined source-language behavior cannot be repaired by appealing to what one processor usually does.\n\n## Worked example\n\nA source multiplication might become a shift, a multiply instruction, or disappear after constant folding. Counting source operators does not tell you how many instructions execute or whether the loop waits on memory.\n\n## Try it\n\nCompile a small reduction in an optimized build and inspect its generated code. Identify loop overhead, loads, arithmetic, and any vector operations. Validate that the output is used.\n\n## Check your work\n\nExplain behavior at the language, instruction, and hardware layers separately. State compiler and target settings and avoid treating one generated instruction sequence as a universal guarantee.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-endianness",
+        "architecture-frequency-time",
+        "architecture-instruction-cache"
+      ]
+    },
+    {
+      "id": "lesson-architecture-cache-hierarchy",
+      "moduleId": "architecture-1",
+      "kind": "concept",
+      "title": "Cache lines, locality, and working sets",
+      "summary": "Estimate cache-line traffic under stated assumptions",
+      "objectives": [
+        "Estimate cache-line traffic under stated assumptions.",
+        "Distinguish temporal from spatial locality."
+      ],
+      "body": "## Core idea\n\nCaches move data in lines, so touching one byte can bring neighboring bytes into a cache. Spatial locality uses nearby data; temporal locality reuses data before eviction. Working-set size, associativity, access order, and sharing all affect hit behavior. A capacity estimate gives a useful hypothesis but not an exact prediction of cache misses on real hardware.\n\n## Worked example\n\nAssume 64-byte lines and aligned 8-byte elements. A sequential scan can use eight elements from each line. Accessing one element every 64 bytes uses only one element per line and transfers more line data per useful element.\n\n## Try it\n\nCompute useful bytes per fetched line for two strides, then plan a scan across working sets smaller and larger than a selected cache.\n\n## Check your work\n\nReport line size and alignment assumptions. Keep total useful work comparable and distinguish cache-resident reuse from a streaming pass that must fetch new data.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-cache-hierarchy",
+        "architecture-line-offset",
+        "architecture-amat",
+        "architecture-aos-soa"
+      ]
+    },
+    {
+      "id": "lesson-architecture-latency-throughput",
+      "moduleId": "architecture-1",
+      "kind": "concept",
+      "title": "Latency, throughput, and dependent work",
+      "summary": "Distinguish operation latency from sustained issue rate",
+      "objectives": [
+        "Distinguish operation latency from sustained issue rate.",
+        "Identify dependencies that prevent overlap."
+      ],
+      "body": "## Core idea\n\nLatency is the time until one operation’s result can be used. Throughput describes how many independent operations can be sustained per time unit. Pipelining permits overlap but cannot eliminate a true dependency chain. Multiple execution units help only when independent work is available and another resource does not become the bottleneck.\n\n## Worked example\n\nA chain where each addition uses the previous result can expose add latency. Several independent accumulators permit overlap and may improve throughput, until loads, execution ports, or the final reduction dominate.\n\n## Try it\n\nCompare one accumulator with four independent accumulators over the same array. Predict when the difference should shrink as the data becomes memory-bandwidth bound.\n\n## Check your work\n\nBoth versions compute a valid equivalent result under the chosen arithmetic rules. Discuss floating-point reassociation explicitly rather than silently changing numerical behavior.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-pipeline-latency"
+      ]
+    },
+    {
+      "id": "lesson-architecture-line",
+      "title": "Two variables fighting over one line",
+      "summary": "Caches · Coherence",
+      "body": "## The problem to understand\n\nCore A repeatedly writes x; core B repeatedly writes y. x and y are independent variables but occupy the same coherence line. There is no logical sharing. What best explains a large throughput loss compared with placing them on separate lines?\n\n## The mental model\n\nThis is false sharing. Coherence normally tracks ownership at cache-line granularity, not at the source-language variable boundary. Writes to different words in the same line can force ownership to move between cores. The data can be race-free and still trigger heavy coherence traffic.\n\nSeparate the independently written hot data with appropriate alignment and spacing, or aggregate locally if delayed visibility is acceptable. Measure on the target platform: coherence-line size, topology, and write frequency affect the result. More padding also increases memory footprint and can hurt cache and TLB locality elsewhere.\n\n## Check your understanding\n\n- Identify cache-line granularity as the source of interference.\n- Distinguish false sharing from logical data sharing or races.\n- Explain a placement repair and its footprint tradeoff.\n\n## Think one step further\n\nWhy can two read-only variables sharing the same line be beneficial instead?\n\n## Primary reading\n\n- [Intel · architecture and optimization manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 4,
+      "questionIds": [
+        "architecture-line"
+      ],
+      "moduleId": "architecture-1",
+      "kind": "workshop",
+      "objectives": [
+        "Identify cache-line granularity as the source of interference.",
+        "Distinguish false sharing from logical data sharing or races."
+      ]
+    },
+    {
+      "id": "lesson-architecture-branch-speculation",
+      "moduleId": "architecture-2",
+      "kind": "concept",
+      "title": "Branches, prediction, and speculative work",
+      "summary": "Explain when a branch can waste pipeline work",
+      "objectives": [
+        "Explain when a branch can waste pipeline work.",
+        "Evaluate branchless code as a tradeoff."
+      ],
+      "body": "## Core idea\n\nProcessors may predict branches to keep work in flight. A wrong prediction discards speculative progress and redirects execution. Predictability depends on input patterns and the implementation. Branchless code can avoid some control hazards but may execute extra operations, lengthen dependency chains, or access memory unconditionally. It is not automatically faster or semantically interchangeable.\n\n## Worked example\n\nFiltering a sorted array may yield a long run of the same branch outcome. The same predicate over randomized data can be harder to predict. A branchless rewrite may help one distribution and hurt another.\n\n## Try it\n\nBenchmark a conditional aggregation with sorted, alternating, and random inputs. Keep counts and arithmetic equal, and inspect whether the compiler already changed the branch.\n\n## Check your work\n\nResults identify the input distribution and generated code. A conclusion about prediction is supported by suitable counters or controlled input changes, not just a single elapsed time.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-branch-predictor",
+        "architecture-spectre-boundary"
+      ]
+    },
+    {
+      "id": "lesson-architecture-coherence-ordering",
+      "moduleId": "architecture-2",
+      "kind": "concept",
+      "title": "Coherence and memory ordering are different contracts",
+      "summary": "Separate one-location coherence from cross-location ordering",
+      "objectives": [
+        "Separate one-location coherence from cross-location ordering.",
+        "Connect machine observations to language-level synchronization."
+      ],
+      "body": "## Core idea\n\nCoherence coordinates copies of a location across caches. Memory ordering constrains how accesses to different locations become observable. Neither a cache line nor a familiar processor model excuses a data race in a language program. Use the language synchronization model first, then ask how the target implements it. A barrier can affect ordering without fixing object lifetime or a broken algorithm.\n\n## Worked example\n\nTwo independent atomic locations can produce observations that surprise a sequential mental model, depending on the selected memory orders. Making each access atomic does not by itself impose one global sequence on all unrelated operations.\n\n## Try it\n\nDraw a two-thread publication example and mark atomicity, release/acquire synchronization, and ordinary payload access. Compare it with an unsynchronized version.\n\n## Check your work\n\nThe valid version has an explicit happens-before argument under the language rules. Avoid inferring universal behavior from one litmus test on one machine.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-store-buffer",
+        "architecture-coherence-consistency",
+        "architecture-atomic-contention"
+      ]
+    },
+    {
+      "id": "lesson-architecture-sets",
+      "title": "Nine lines, eight places",
+      "summary": "Cache sets · Associativity",
+      "body": "## The problem to understand\n\nConsider a simplified 32 KiB, 8-way, 64-byte-line L1 data cache with 64 sets and conventional indexing `(address / 64) mod 64`. Nine addresses are 4,096 bytes apart and accessed in a repeating cycle. Ignore prefetching and other accesses; use true LRU replacement. In steady state, how many of the nine accesses per cycle miss?\n\n## The mental model\n\nAll nine addresses map to the same set because 4,096 bytes is 64 cache lines, so each stride leaves the set index unchanged. That set has only eight ways. Under a repeating cycle of nine distinct lines with true LRU, each next line has already been evicted, yielding 9 misses per cycle.\n\nThe total data touched is only 576 bytes, far below total cache capacity. This is a conflict problem rather than a capacity problem. Real caches may use different indexing or replacement policies, so the numerical conclusion belongs to the stated model.\n\n## Check your understanding\n\n- Derive that a 4 KiB stride preserves the set index.\n- Compare nine distinct lines with eight ways.\n- Use cyclic true-LRU behavior rather than total cache capacity.\n\n## Think one step further\n\nWhat changes if the stride is 4,160 bytes instead?\n\n## Primary reading\n\n- [Intel · architecture and optimization manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 4,
+      "questionIds": [
+        "architecture-sets",
+        "architecture-associativity"
+      ],
+      "moduleId": "architecture-2",
+      "kind": "workshop",
+      "objectives": [
+        "Derive that a 4 KiB stride preserves the set index.",
+        "Compare nine distinct lines with eight ways."
+      ]
+    },
+    {
+      "id": "lesson-architecture-litmus",
+      "title": "Can both cores read zero?",
+      "summary": "Store buffers · Memory ordering",
+      "body": "## The problem to understand\n\nTwo atomic integers x and y start at zero. Thread 0 relaxed-stores x=1 then relaxed-loads y into r0. Thread 1 relaxed-stores y=1 then relaxed-loads x into r1. Explain whether r0=r1=0 is allowed by the C++ memory model and how store buffers give hardware intuition. State a straightforward language-level change that forbids this outcome.\n\n```cpp\n// initially x = y = 0\n// Thread 0                 // Thread 1\nx.store(1, relaxed);        y.store(1, relaxed);\nr0 = y.load(relaxed);       r1 = x.load(relaxed);\n```\n\n## The mental model\n\nBoth reads observing zero is allowed with relaxed atomics. Each variable has atomic accesses and a modification order, but there is no cross-thread synchronization requiring either load to observe the other thread’s store. Store buffers provide intuition: each core’s store can remain buffered while its subsequent load reads the other location’s old value.\n\nUsing sequentially consistent operations for all four accesses forbids the all-zero outcome through the single SC order and each thread’s ordering constraints. Merely changing the stores to release and loads to acquire does not suffice if both loads still read the initial zero: neither acquire observes the other release. Use language-level ordering guarantees rather than relying on one CPU’s apparent strength.\n\n## Check your understanding\n\n- State that relaxed atomics allow the all-zero outcome without a data race.\n- Explain store-buffer intuition without substituting it for the language model.\n- Explain why all-SC forbids it and release/acquire may still allow it.\n\n## Think one step further\n\nCan you forbid this outcome with fences while keeping the individual atomic operations relaxed?\n\n## Primary reading\n\n- [Intel · architecture and optimization manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 5,
+      "questionIds": [
+        "architecture-litmus"
+      ],
+      "moduleId": "architecture-2",
+      "kind": "workshop",
+      "objectives": [
+        "State that relaxed atomics allow the all-zero outcome without a data race.",
+        "Explain store-buffer intuition without substituting it for the language model."
+      ]
+    },
+    {
+      "id": "lesson-architecture-prefetch-parallelism",
+      "moduleId": "architecture-3",
+      "kind": "concept",
+      "title": "Prefetching and memory-level parallelism",
+      "summary": "Explain why pointer chasing limits overlap",
+      "objectives": [
+        "Explain why pointer chasing limits overlap.",
+        "Recognize when prefetching cannot hide latency."
+      ],
+      "body": "## Core idea\n\nA processor can overlap several independent memory requests. A pointer chain reveals the next address only after the current load completes, restricting that overlap. Regular streams are easier for hardware prefetchers to anticipate. Software prefetch can help selected patterns but needs enough lead time and can waste bandwidth or cache capacity. Access patterns determine whether nominal bandwidth is usable.\n\n## Worked example\n\nScanning an array exposes future addresses immediately. Following a randomly shuffled next pointer through the same number of bytes creates a dependency chain. Equal bytes touched therefore need not imply equal runtime.\n\n## Try it\n\nCompare a sequential scan, a random independent gather, and a pointer chain over matched working sets. Predict which workload measures bandwidth and which emphasizes latency.\n\n## Check your work\n\nValidate all visited elements and prevent dead-code elimination. Explain the number of independent outstanding requests available rather than claiming random access has one fixed cost.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-prefetch-stride",
+        "architecture-mlp-bound"
+      ]
+    },
+    {
+      "id": "lesson-architecture-translation-pages",
+      "moduleId": "architecture-3",
+      "kind": "concept",
+      "title": "Translation has a working set too",
+      "summary": "Estimate translation footprint under explicit page assumptions",
+      "objectives": [
+        "Estimate translation footprint under explicit page assumptions.",
+        "Describe huge-page benefits and tradeoffs."
+      ],
+      "body": "## Core idea\n\nThe TLB caches virtual-to-physical translations. A data access can hit a data cache yet still require translation work. Touching many pages increases translation pressure, while larger pages can cover more bytes per TLB entry. Larger pages also affect allocation, fragmentation, and placement, and do not guarantee better performance for every workload.\n\n## Worked example\n\nA 64 MiB range spans 16,384 pages at 4 KiB per page, but only 32 pages at 2 MiB per page if alignment and mapping permit. These counts do not by themselves specify TLB hit rate because access order and TLB structure matter.\n\n## Try it\n\nCalculate the page footprint of a stride workload and plan a comparison with different supported mapping sizes. Record faults separately from translation misses.\n\n## Check your work\n\nThe report states actual mapping behavior and does not equate a TLB miss with a page fault or disk access. Include memory allocation and system configuration in the experiment.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-page-coverage",
+        "architecture-numa-first-touch"
+      ]
+    },
+    {
+      "id": "lesson-architecture-pointer-chase",
+      "title": "Same bytes, very different bandwidth",
+      "summary": "Memory-level parallelism · Prefetch",
+      "body": "## The problem to understand\n\nA sequential array scan and a randomly permuted linked-list traversal read the same number of cache lines from DRAM. The scan is much faster. Explain why equal byte counts do not imply equal runtime. Discuss dependency chains, memory-level parallelism, prefetchability, and how interleaving independent pointer chains changes the experiment.\n\n## The mental model\n\nA sequential scan exposes many future addresses independently. Hardware prefetchers can detect the pattern, and out-of-order execution can keep multiple cache misses in flight. Throughput can approach a bandwidth limit. In a pointer chain, the next address depends on the current load’s result, serializing misses. It may become latency-bound even while using only a small fraction of peak memory bandwidth.\n\nInterleaving several independent chains can expose parallel misses and increase throughput until miss-handling resources or bandwidth become limiting. The result still depends on cache residency, TLB behavior, NUMA placement, and line utilization. Separate dependent-load latency from streaming bandwidth benchmarks, and ensure the compiler cannot eliminate the traversal.\n\n## Check your understanding\n\n- Identify the address dependency that serializes pointer chasing.\n- Connect independent addresses to prefetching and multiple outstanding misses.\n- Explain how multiple chains expose parallelism and identify remaining limits.\n\n## Think one step further\n\nWhy might a structure-of-arrays representation improve a selective scan even if total object size is unchanged?\n\n## Primary reading\n\n- [Intel · architecture and optimization manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 6,
+      "questionIds": [
+        "architecture-pointer-chase"
+      ],
+      "moduleId": "architecture-3",
+      "kind": "workshop",
+      "objectives": [
+        "Identify the address dependency that serializes pointer chasing.",
+        "Connect independent addresses to prefetching and multiple outstanding misses."
+      ]
+    },
+    {
+      "id": "lesson-architecture-tlb",
+      "title": "Your cache hit still needs an address",
+      "summary": "TLB · Huge pages",
+      "body": "## The problem to understand\n\nA simplified data TLB holds 64 translations for 4 KiB pages. A separate configuration instead holds 32 translations for 2 MiB pages. Ignore associativity conflicts, other TLB levels, and mixed page sizes. How many times larger is the second configuration’s **translation reach**? Enter the ratio.\n\n## The mental model\n\nThe base-page reach is `64 × 4 KiB = 256 KiB`. The large-page reach is `32 × 2 MiB = 64 MiB`. The ratio is `64 MiB / 256 KiB = 256`.\n\nTranslation reach is the amount of mapped address space these entries can cover, not cache capacity. Larger pages may reduce translation misses while increasing internal fragmentation, allocation constraints, or fault and compaction costs. Actual TLB structures differ by page size and processor, so both entry counts are explicit assumptions here.\n\n## Check your understanding\n\n- Compute reach as entry count times page size.\n- Use consistent binary units.\n- Distinguish translation reach from data-cache capacity.\n\n## Think one step further\n\nWhy might enabling transparent huge pages worsen p99 even when TLB miss counts fall?\n\n## Primary reading\n\n- [Linux kernel · transparent huge pages](https://docs.kernel.org/admin-guide/mm/transhuge.html)",
+      "minutes": 4,
+      "questionIds": [
+        "architecture-tlb"
+      ],
+      "moduleId": "architecture-3",
+      "kind": "workshop",
+      "objectives": [
+        "Compute reach as entry count times page size.",
+        "Use consistent binary units."
+      ]
+    },
+    {
+      "id": "lesson-architecture-simd-data",
+      "moduleId": "architecture-4",
+      "kind": "concept",
+      "title": "Vectorization needs data and semantic permission",
+      "summary": "Identify dependencies and aliasing that inhibit vectorization",
+      "objectives": [
+        "Identify dependencies and aliasing that inhibit vectorization.",
+        "Keep numerical and bounds behavior explicit."
+      ],
+      "body": "## Core idea\n\nSIMD executes operations across multiple lanes. Effective vectorization needs suitable data layout, independent iterations, and operations supported efficiently by the target. Aliasing concerns and loop-carried dependencies can prevent transformations. Alignment, tails, and floating-point rules affect implementation. Wider vectors can change frequency, bandwidth demand, or register pressure, so lane count alone does not establish speedup.\n\n## Worked example\n\nAdding two independent arrays into a third is a natural vector candidate. Updating each output from its previous neighbor introduces a dependency. A final partial vector needs a correct tail strategy without reading beyond valid input.\n\n## Try it\n\nInspect a compiler vectorization report for an elementwise loop and a prefix-dependent loop. Try a justified layout or interface change and measure equivalent outputs.\n\n## Check your work\n\nExplain the dependence analysis and tail handling. Any relaxed floating-point assumptions are documented, and measured speedup is compared with memory traffic limits.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 15,
+      "questionIds": [
+        "architecture-simd-width",
+        "architecture-non-temporal"
+      ]
+    },
+    {
+      "id": "lesson-architecture-performance-counters",
+      "moduleId": "architecture-4",
+      "kind": "workshop",
+      "title": "Counters support hypotheses, not automatic diagnoses",
+      "summary": "Choose a counter that tests a specific bottleneck claim",
+      "objectives": [
+        "Choose a counter that tests a specific bottleneck claim.",
+        "Recognize measurement noise and counter scope."
+      ],
+      "body": "## Core idea\n\nHardware counters observe selected events with processor-specific definitions. Sampling, multiplexing, frequency changes, and unrelated system activity can affect interpretation. A high miss count is not enough to prove misses dominate runtime; many misses can overlap. Use counters alongside elapsed time, workload verification, and controlled changes.\n\n## Worked example\n\nIf blocking an array loop reduces measured last-level misses and elapsed time under the same work, the pair supports a locality explanation. A lower miss count with unchanged runtime suggests a different bottleneck or overlapped latency.\n\n## Try it\n\nWrite an experiment plan comparing two matrix-loop orders. State expected changes in bytes moved, runtime, and selected counters, plus observations that would contradict your hypothesis.\n\n## Check your work\n\nResults include repeated samples and hardware context. Avoid comparing raw counters with different work counts or treating an event name as portable across all CPUs.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 25,
+      "questionIds": [
+        "architecture-benchmark-fence"
+      ]
+    },
+    {
+      "id": "lesson-architecture-roofline",
+      "title": "Faster arithmetic, unchanged runtime",
+      "summary": "Roofline · Arithmetic intensity · Profiling",
+      "body": "## The problem to understand\n\nA kernel streams two large float arrays and writes a third: `out[i] = a[i] * scale + b[i]`. Replacing scalar arithmetic with wider SIMD barely improves runtime. Develop a performance model and an investigation. Include arithmetic intensity, write allocation, cache residency, vectorization evidence, memory bandwidth, and when non-temporal stores might help or hurt.\n\n```cpp\nfor (size_t i = 0; i < n; ++i) {\n    out[i] = a[i] * scale + b[i];\n}\n```\n\n## The mental model\n\nCount arithmetic work and bytes at the relevant memory level. Each element has roughly two floating-point operations and at least two four-byte reads plus one four-byte write, before considering write-allocate traffic. This low arithmetic intensity can make DRAM bandwidth the limiting resource. Wider arithmetic cannot exceed a byte-supply ceiling once enough independent accesses already saturate it.\n\nMeasure achieved bandwidth, working-set dependence, hardware counters, and compiler output to confirm vectorization and the actual bottleneck. Cold write-allocate output can add read-for-ownership traffic; full-line non-temporal stores may reduce that for large outputs that are not immediately reused. They impose alignment, ordering, and cache-use tradeoffs and may be worse when the next stage needs the output resident. Check NUMA placement, page faults, aliasing assumptions, and frequency changes before attributing every flat result to bandwidth.\n\n## Check your understanding\n\n- Model both operations and memory traffic, including possible write allocation.\n- Explain the arithmetic-intensity bandwidth ceiling.\n- Verify generated code, bandwidth, and working-set behavior.\n- Discuss non-temporal store applicability and immediate-reuse tradeoffs.\n\n## Think one step further\n\nHow would fusing a second computation over out change arithmetic intensity and memory traffic?\n\n## Primary reading\n\n- [Intel · architecture and optimization manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 9,
+      "questionIds": [
+        "architecture-roofline"
+      ],
+      "moduleId": "architecture-4",
+      "kind": "workshop",
+      "objectives": [
+        "Model both operations and memory traffic, including possible write allocation.",
+        "Explain the arithmetic-intensity bandwidth ceiling."
+      ]
+    },
+    {
+      "id": "lesson-architecture-architecture-capstone",
+      "moduleId": "architecture-4",
+      "kind": "capstone",
+      "title": "Capstone: explain and improve a measured bottleneck",
+      "summary": "Integrate dependency, locality, translation, and throughput models",
+      "objectives": [
+        "Integrate dependency, locality, translation, and throughput models.",
+        "Defend an optimization using reproducible evidence."
+      ],
+      "body": "## Core idea\n\nChoose a local kernel such as an array aggregation, matrix tile, or record scan. Preserve a reference implementation and define a workload matrix spanning input size and access pattern. Form competing compute, cache, translation, and dependency hypotheses. Make one targeted change at a time and validate every output.\n\n## Worked example\n\nA record scan may improve after separating hot fields, then stop improving once bandwidth is saturated. Adding more arithmetic lanes at that point cannot exceed the traffic-bound limit without reducing bytes or increasing reuse.\n\n## Try it\n\nDeliver the kernel, reference checks, hardware and compiler details, predicted traffic, and repeated timings. Use available counters where appropriate. Compare at least two working-set sizes and state numerical tolerances.\n\n## Check your work\n\nReview correctness, a falsifiable bottleneck explanation, comparable measurements, and limits to generalization. Do not claim the fastest result on one machine is a universal architectural rule.\n\n## Primary reading\n\n- [Intel architecture manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)",
+      "minutes": 60,
+      "questionIds": [
+        "architecture-memory-bandwidth",
+        "architecture-heterogeneous-cores",
+        "architecture-end-to-end-limit"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Read simple loops and array-based code.",
+    "Understand binary sizes, nanoseconds, and basic throughput arithmetic."
+  ],
+  "outcomes": [
+    "Separate ISA guarantees from microarchitecture and compiler behavior.",
+    "Predict locality, dependency, translation, and coherence bottlenecks.",
+    "Use arithmetic intensity and parallelism to form performance hypotheses.",
+    "Design a reproducible experiment with correct outputs and stated hardware assumptions."
+  ],
+  "modules": [
+    {
+      "id": "architecture-1",
+      "title": "Instructions and locality",
+      "description": "Establish execution, memory hierarchy, and cache-line behavior.",
+      "level": "Foundation"
+    },
+    {
+      "id": "architecture-2",
+      "title": "Pipelines and ordering",
+      "description": "Study dependencies, speculation, and shared-memory observations.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "architecture-3",
+      "title": "Translation and bandwidth",
+      "description": "Relate data access patterns to TLBs and memory-level parallelism.",
+      "level": "Advanced"
+    },
+    {
+      "id": "architecture-4",
+      "title": "Models and experiments",
+      "description": "Apply bottleneck models and defend optimization decisions.",
+      "level": "Expert"
+    }
+  ]
+}

@@ -1,0 +1,314 @@
+{
+  "id": "rust",
+  "topic": "rust",
+  "title": "Rust: ownership to concurrent systems",
+  "description": "Build reliable Rust programs from ownership and trait design through async execution, memory ordering, and a bounded concurrent pipeline.",
+  "lessons": [
+    {
+      "id": "lesson-rust-values-and-moves",
+      "moduleId": "rust-1",
+      "kind": "concept",
+      "title": "Values, moves, and deterministic cleanup",
+      "summary": "Trace which binding owns a heap allocation",
+      "objectives": [
+        "Trace which binding owns a heap allocation.",
+        "Choose a borrow or an owned return value for an API."
+      ],
+      "body": "## Core idea\n\nA binding owns a value; moving that value transfers responsibility for its eventual destruction. Moving a String normally transfers its descriptor, not a copy of its heap bytes. Copy types instead permit implicit duplication. Scope determines when owned values are dropped, while borrow checking prevents references from being used after their owners become unavailable. Stack versus heap placement alone does not determine ownership.\n\n## Worked example\n\nAfter `let a = String::from(\"tick\"); let b = a;`, b owns the allocation and a cannot be used. Calling `inspect(&b)` lends access; calling `consume(b)` transfers ownership. Cloning b explicitly creates another owned string.\n\n## Try it\n\nSketch `inspect`, `consume`, and `normalize` signatures. Make normalize return ownership when it creates new bytes. Trace the owner before and after each call.\n\n## Check your work\n\nA borrowed inspector accepts `&str`; a consumer may accept String. Explain where each allocation is destroyed and why a reference cannot keep a moved or destroyed value alive.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-move-copy",
+        "rust-borrowed-api",
+        "rust-drop-scope"
+      ]
+    },
+    {
+      "id": "lesson-rust-enums-errors",
+      "moduleId": "rust-1",
+      "kind": "concept",
+      "title": "Model states and failures with enums",
+      "summary": "Represent mutually exclusive states without invalid flag combinations",
+      "objectives": [
+        "Represent mutually exclusive states without invalid flag combinations.",
+        "Propagate recoverable failures with Result."
+      ],
+      "body": "## Core idea\n\nEnums make a set of alternatives explicit. Pattern matching must account for each alternative, so adding a state forces callers to revisit their assumptions. Option describes absence; Result distinguishes success from a recoverable error. The question mark operator propagates an error to the caller, potentially converting it through From. A panic is not a replacement for an ordinary invalid-input result.\n\n## Worked example\n\nAn order can be Pending, Accepted with an exchange identifier, or Rejected with a reason. Two booleans such as accepted and rejected also admit contradictory combinations. An enum stores only the fields valid for the selected state.\n\n## Try it\n\nDefine a parse_price function returning a Result. Reject an empty input, invalid digits, and overflow separately. Use a match to turn each error into a user-facing explanation.\n\n## Check your work\n\nEvery input produces a value or a specific error. No unwrap is needed on untrusted input, and tests cover all variants. Describe how adding a new error variant affects exhaustive matches.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-option-match",
+        "rust-result-propagation",
+        "rust-error-context"
+      ]
+    },
+    {
+      "id": "lesson-rust-borrowing-collections",
+      "moduleId": "rust-1",
+      "kind": "concept",
+      "title": "Borrowing collections without fighting the compiler",
+      "summary": "Separate shared reads from exclusive mutation",
+      "objectives": [
+        "Separate shared reads from exclusive mutation.",
+        "Recognize operations that can invalidate references."
+      ],
+      "body": "## Core idea\n\nA shared borrow permits reading through aliases; an exclusive borrow permits mutation under an exclusivity contract. References into a Vec cannot remain in use across an operation that may relocate its storage. The compiler checks use ranges rather than simply keeping every borrow alive to the closing brace. Prefer restructuring an operation into read and write phases instead of reaching for interior mutability immediately.\n\n## Worked example\n\nTo append a derived value, first compute `let n = values.len();`, then call `values.push(n)`. To retain an element across a possible reallocation, store its index and obtain a fresh reference afterward, checking that the index is still valid.\n\n## Try it\n\nWrite a function that finds the largest item and appends a transformed copy. Try keeping a reference across push, then repair the design with a copied scalar or a two-phase calculation.\n\n## Check your work\n\nThe implementation must explain the reference lifetime and possible reallocation. Reserving capacity is a performance choice; it does not grant permission to violate borrowing rules.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-str-boundary",
+        "rust-interior-mutability",
+        "rust-hashmap-entry"
+      ]
+    },
+    {
+      "id": "lesson-rust-borrow",
+      "title": "When does a borrow actually end?",
+      "summary": "Ownership · NLL",
+      "body": "## The problem to understand\n\nAssume stable Rust and an ordinary `Vec<i32>`. Does the following program compile? Choose the most precise explanation. Focus on the last **use** of `first`, rather than the closing brace of its scope.\n\n```rust\nlet mut values = vec![10, 20, 30];\nlet first = &values[0];\nprintln!(\"{first}\");\nvalues.push(40);\n```\n\n## The mental model\n\nIt compiles. Under non-lexical lifetimes, the immutable borrow needed by `first` ends after its last use in `println!`. The later `push` can therefore borrow `values` mutably. The reference binding still has a lexical scope, but the active borrow does not need to last for that entire scope.\n\nMoving `println!` below `push` changes the result: `push` may reallocate the vector, and the old element reference cannot remain valid across that operation. Capacity alone does not make that conflicting borrow acceptable to the borrow checker.\n\n## Check your understanding\n\n- Distinguish the binding’s scope from the borrow’s lifetime.\n- Identify println! as the last use of the element reference.\n- Explain why using first after push would be rejected.\n\n## Think one step further\n\nIf the vector has spare capacity, can you legally use first after push? Explain the distinction between an implementation detail and the borrowing rule.\n\n## Primary reading\n\n- [The Rust Book · ownership and concurrency](https://doc.rust-lang.org/book/)",
+      "minutes": 4,
+      "questionIds": [
+        "rust-borrow"
+      ],
+      "moduleId": "rust-1",
+      "kind": "workshop",
+      "objectives": [
+        "Distinguish the binding’s scope from the borrow’s lifetime.",
+        "Identify println! as the last use of the element reference."
+      ]
+    },
+    {
+      "id": "lesson-rust-traits-generics",
+      "moduleId": "rust-2",
+      "kind": "concept",
+      "title": "Traits, generics, and dispatch boundaries",
+      "summary": "Choose static or dynamic dispatch deliberately",
+      "objectives": [
+        "Choose static or dynamic dispatch deliberately.",
+        "Keep trait contracts smaller than concrete implementations."
+      ],
+      "body": "## Core idea\n\nA trait expresses behavior that several types can provide. Generic functions typically use monomorphization, allowing specialization and inlining at the cost of additional generated code. A trait object such as `&dyn Sink` uses dynamic dispatch and supports heterogeneous implementations behind a common interface. Only dyn-compatible traits can form trait objects. Neither dispatch style automatically solves ownership or thread safety.\n\n## Worked example\n\nA parser generic over a byte source can inline a small in-memory reader. A plugin registry may instead store `Box<dyn Sink>` values because the concrete sinks differ at runtime. The box owns its implementation; the trait object describes callable behavior.\n\n## Try it\n\nDesign a sink interface for records. Implement a counting sink and an in-memory sink, then describe a generic parser and a dynamically selected sink registry.\n\n## Check your work\n\nBoth sinks obey the same error and ordering contract. Explain where dispatch occurs, who owns each sink, and whether Send or Sync bounds are needed for your chosen thread topology.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-trait-dispatch",
+        "rust-send-sync"
+      ]
+    },
+    {
+      "id": "lesson-rust-iterators-costs",
+      "moduleId": "rust-2",
+      "kind": "concept",
+      "title": "Iterators, allocation, and explicit cost models",
+      "summary": "Distinguish lazy iteration from materialization",
+      "objectives": [
+        "Distinguish lazy iteration from materialization.",
+        "Identify allocation and cloning in a transformation pipeline."
+      ],
+      "body": "## Core idea\n\nIterator adapters describe work that is normally performed when a consumer advances the iterator. Collect materializes results into a chosen collection. Borrowed iteration can avoid cloning source values, but a resulting collection of owned strings still needs ownership somewhere. A zero-cost abstraction means no required abstraction penalty compared with equivalent code; it does not mean the requested computation or allocation is free.\n\n## Worked example\n\n`names.iter().filter(|s| !s.is_empty()).count()` counts without building a second vector. Replacing count with `cloned().collect::<Vec<_>>()` creates owned output elements and may allocate their string contents.\n\n## Try it\n\nImplement filtering once with an explicit loop and once with iterators. Predict the allocations for counting matches versus returning owned matches, then verify using a small benchmark or allocation profiler.\n\n## Check your work\n\nCompare equivalent outputs in an optimized build and keep input construction outside the timed section. Explain each clone instead of claiming an iterator is inherently faster.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-iterator-lazy",
+        "rust-iterator-borrow"
+      ]
+    },
+    {
+      "id": "lesson-rust-lifetime",
+      "title": "A lifetime cannot keep a value alive",
+      "summary": "Lifetimes · API design",
+      "body": "## The problem to understand\n\nThis API tries to return a borrowed view of a normalized string. Explain why adding a lifetime annotation cannot repair it. Rewrite the API with an honest ownership contract, and describe when `Cow<str>` would be a useful alternative.\n\n```rust\nfn normalize<'a>(input: &'a str) -> &'a str {\n    let normalized = input.to_lowercase();\n    normalized.trim()\n}\n```\n\n## The mental model\n\n`normalized` owns a buffer that is destroyed when the function returns. `trim` borrows that buffer. A lifetime parameter describes relationships between existing references; it cannot extend the storage duration of a local `String`.\n\nReturn an owned `String`, for example `input.to_lowercase().trim().to_owned()`. This has a simple contract: the caller owns the returned bytes. An API returning `Cow<'a, str>` can borrow from the input when no normalization is necessary, and return `Cow::Owned` when it must construct new bytes. Its borrowed variant must never refer to the local temporary.\n\n## Check your understanding\n\n- Locate the allocation that is dropped at function exit.\n- Explain what lifetime annotations can and cannot express.\n- Provide an owned return type and a valid Cow borrowing case.\n\n## Think one step further\n\nDesign a normalization function that returns a borrowed string when the input is already normalized.\n\n## Primary reading\n\n- [The Rust Book · ownership and concurrency](https://doc.rust-lang.org/book/)",
+      "minutes": 4,
+      "questionIds": [
+        "rust-lifetime"
+      ],
+      "moduleId": "rust-2",
+      "kind": "workshop",
+      "objectives": [
+        "Locate the allocation that is dropped at function exit.",
+        "Explain what lifetime annotations can and cannot express."
+      ]
+    },
+    {
+      "id": "lesson-rust-shared-counter",
+      "title": "Shared ownership is not synchronization",
+      "summary": "Send + Sync · Concurrency",
+      "body": "## The problem to understand\n\nA worker pool must increment a shared counter from four OS threads and report the exact final value after all threads finish. Implement a correct Rust version. Explain why replacing `Rc` with `Arc` alone is insufficient for `RefCell<u64>`. Offer an atomic alternative, including the ordering required **only for the counter value**.\n\n```rust\n// Implement count(workers: usize, iterations: u64) -> u64\n// Use std::thread and std::sync.\n\n```\n\n## The mental model\n\nUse `Arc<Mutex<u64>>`, clone the Arc into each thread, acquire the mutex before incrementing, and join all handles before reading the final value. `Rc` is not thread-safe reference counting. `Arc` provides thread-safe shared ownership, but does not make its payload thread-safe; `RefCell` has unsynchronized runtime borrowing state and is not `Sync`.\n\nFor an independent numeric counter, `Arc<AtomicU64>` with `fetch_add(1, Ordering::Relaxed)` is sufficient on targets supporting that atomic type. Each increment is atomic; joining the threads establishes completion before the final load. Relaxed arithmetic does not publish unrelated payload data.\n\n## Check your understanding\n\n- Use thread-safe ownership and synchronization for the payload.\n- Join all workers before reading the final total.\n- Explain why Arc<RefCell<_>> is unsuitable and why Relaxed is enough for an independent counter.\n\n## Think one step further\n\nWhat changes if each increment also announces that a corresponding non-atomic result buffer is ready?\n\n## Primary reading\n\n- [The Rust Book · ownership and concurrency](https://doc.rust-lang.org/book/)",
+      "minutes": 5,
+      "questionIds": [
+        "rust-shared-counter",
+        "rust-arc-count",
+        "rust-mutex-poison"
+      ],
+      "moduleId": "rust-2",
+      "kind": "workshop",
+      "objectives": [
+        "Use thread-safe ownership and synchronization for the payload.",
+        "Join all workers before reading the final total."
+      ]
+    },
+    {
+      "id": "lesson-rust-async-lifecycle",
+      "moduleId": "rust-3",
+      "kind": "concept",
+      "title": "Futures, polling, and cancellation ownership",
+      "summary": "Explain how a future makes progress",
+      "objectives": [
+        "Explain how a future makes progress.",
+        "Design cleanup when an operation is dropped midway."
+      ],
+      "body": "## Core idea\n\nA future represents a computation that an executor polls. Returning Pending arranges a later wakeup; spinning inside poll prevents cooperative progress. Await is a suspension opportunity, not a promise that arbitrary work is nonblocking. Dropping a future cancels that future, but external effects already initiated may continue. Cancellation safety concerns the state left behind if suspension is followed by drop.\n\n## Worked example\n\nIf a receiver future is dropped after a request has been sent, the remote server may still execute it. If a parser consumes half a frame before cancellation, the next reader must know whether those bytes remain in its buffer.\n\n## Try it\n\nDraw the states of an async request with a deadline: queued, sent, waiting, completed, cancelled. For each transition identify owned buffers, possible external effects, and who performs cleanup.\n\n## Check your work\n\nThe design handles cancellation before and after sending. It neither assumes dropping a future rolls back remote work nor allows an unbounded background task to outlive its request silently.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-async-laziness",
+        "rust-pin-contract"
+      ]
+    },
+    {
+      "id": "lesson-rust-concurrency-testing",
+      "moduleId": "rust-3",
+      "kind": "concept",
+      "title": "Test interleavings and invariants",
+      "summary": "Turn a concurrency claim into observable invariants",
+      "objectives": [
+        "Turn a concurrency claim into observable invariants.",
+        "Separate race detection from a memory-ordering proof."
+      ],
+      "body": "## Core idea\n\nConcurrency tests should target properties: each accepted item is observed once, queue occupancy remains bounded, and shutdown eventually releases every worker. Ordinary repeated tests sample only a small set of schedules. Model checking tools can explore more interleavings in a reduced model, while sanitizers and stress tests find different classes of defects. Passing a stress test alone does not establish sound unsafe code.\n\n## Worked example\n\nA queue test tags messages with producer-local sequence numbers. The consumer verifies expected order and total accepted count. A deliberately stalled consumer exercises the full-queue path instead of only the uncontended fast path.\n\n## Try it\n\nWrite a test plan for a bounded queue using empty, full, shutdown, and counter-wrap scenarios. State which properties need a proof and which can be checked by executing tests.\n\n## Check your work\n\nInclude a schedule where producer and consumer pause between publication steps. The wrap test uses a reduced counter model with the same distance invariant, rather than waiting for a real machine counter to wrap.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-loom-test"
+      ]
+    },
+    {
+      "id": "lesson-rust-blocking-future",
+      "title": "The async task that stopped the world",
+      "summary": "Async · Executors",
+      "body": "## The problem to understand\n\nOn a single-thread async runtime, a periodic heartbeat stops whenever this handler runs. The file is small on your laptop but sometimes lives on a slow filesystem in production. Identify both blocking operations, explain why `async fn` does not prevent them, and propose a repair with bounded concurrency.\n\n```rust\nasync fn load_profile(path: &str) -> Vec<u8> {\n    let bytes = std::fs::read(path).unwrap();\n    std::thread::sleep(std::time::Duration::from_secs(1));\n    bytes\n}\n```\n\n## The mental model\n\nAn async function becomes a state machine; it is not automatically executed on a separate OS thread. Both `std::fs::read` and `std::thread::sleep` block the executor thread, preventing unrelated futures from being polled.\n\nUse the runtime’s asynchronous timer. Use an async filesystem API or move blocking work into a blocking pool, with a semaphore or another admission limit around it. Many filesystem wrappers also use a thread pool internally, so unbounded submission still creates a queueing problem. Propagate errors rather than panicking, and decide how cancellation interacts with work that has already started in a blocking thread.\n\n## Check your understanding\n\n- Identify both blocking calls and their effect on executor polling.\n- Replace sleep with an asynchronous timer and isolate filesystem work.\n- Bound blocking work and discuss cancellation after it starts.\n\n## Think one step further\n\nWhy might wrapping every request in spawn_blocking still produce worse p99 latency under overload?\n\n## Primary reading\n\n- [The Rust Book · ownership and concurrency](https://doc.rust-lang.org/book/)",
+      "minutes": 6,
+      "questionIds": [
+        "rust-blocking-future"
+      ],
+      "moduleId": "rust-3",
+      "kind": "workshop",
+      "objectives": [
+        "Identify both blocking calls and their effect on executor polling.",
+        "Replace sleep with an asynchronous timer and isolate filesystem work."
+      ]
+    },
+    {
+      "id": "lesson-rust-publication",
+      "title": "Relaxed is not a publication protocol",
+      "summary": "Atomics · Memory ordering",
+      "body": "## The problem to understand\n\nA producer initializes a payload, then sets an atomic ready flag. A consumer waits for the flag, then reads the payload. The payload is ordinary memory accessed through an otherwise correctly constructed `UnsafeCell`; there is exactly one publication and no subsequent mutation. Which statements are correct? Select all that apply.\n\n## The mental model\n\nA release store and an acquire load that actually observes that store establish a happens-before edge from payload initialization to its read. `Relaxed` only guarantees atomic access to the flag and its per-location modification order; it does not publish the payload. An x86 test passing is not a language-level proof: compiler transformations matter too.\n\n`UnsafeCell` permits interior mutability, but is not synchronization. Its presence alone neither makes a wrapper `Sync` nor removes the obligation to prevent data races. A safe implementation also needs a valid ownership and lifetime story for the payload.\n\n## Check your understanding\n\n- Distinguish flag atomicity from ordering of the payload.\n- Require the acquire load to observe the release publication.\n- Preserve UnsafeCell, lifetime, and Sync obligations.\n\n## Think one step further\n\nWhat additional protocol is needed if the producer reuses the same payload slot?\n\n## Primary reading\n\n- [The Rustonomicon · atomics](https://doc.rust-lang.org/nomicon/atomics.html)",
+      "minutes": 4,
+      "questionIds": [
+        "rust-publication",
+        "rust-atomic-cas"
+      ],
+      "moduleId": "rust-3",
+      "kind": "workshop",
+      "objectives": [
+        "Distinguish flag atomicity from ordering of the payload.",
+        "Require the acquire load to observe the release publication."
+      ]
+    },
+    {
+      "id": "lesson-rust-unsafe-boundaries",
+      "moduleId": "rust-4",
+      "kind": "concept",
+      "title": "Keep unsafe code behind a written contract",
+      "summary": "State the obligations of an unsafe operation",
+      "objectives": [
+        "State the obligations of an unsafe operation.",
+        "Audit aliasing, initialization, and destruction separately."
+      ],
+      "body": "## Core idea\n\nUnsafe permits specific operations the compiler cannot fully verify; it does not disable Rust validity rules. A safe public API must uphold those rules for every safe caller. Write down what memory is initialized, which thread owns access, how long pointers remain valid, and how destruction occurs during normal and exceptional control flow. Small unsafe regions make these obligations easier to inspect.\n\n## Worked example\n\nA raw pointer into a Vec becomes suspect after reallocation even if its numeric address happens to look plausible. A MaybeUninit slot may hold storage without a live T; assuming initialization is valid only after construction actually completed.\n\n## Try it\n\nReview a hypothetical slot API with write, read, and drop operations. Specify legal state transitions and identify which operation owns the obligation to destroy T.\n\n## Check your work\n\nThere is no read before initialization, overlapping mutable access, or double drop. Safety comments explain why the caller satisfies each obligation rather than merely restating the unsafe statement.\n\n## Primary reading\n\n- [The Rustonomicon](https://doc.rust-lang.org/nomicon/)",
+      "minutes": 15,
+      "questionIds": [
+        "rust-unsafe-boundary",
+        "rust-ffi-ownership"
+      ]
+    },
+    {
+      "id": "lesson-rust-performance-method",
+      "moduleId": "rust-4",
+      "kind": "workshop",
+      "title": "Measure costs before changing ownership",
+      "summary": "Design a reproducible Rust performance experiment",
+      "objectives": [
+        "Design a reproducible Rust performance experiment.",
+        "Balance allocation savings against API complexity."
+      ],
+      "body": "## Core idea\n\nStart with a workload, a correctness baseline, and a measurable bottleneck. Use optimized builds and distinguish warmup, steady state, and overload. Allocation counts, CPU profiles, queue depth, and latency distributions answer different questions. Replacing safe code with unsafe code before finding a bottleneck adds a proof burden without demonstrating a benefit.\n\n## Worked example\n\nA parser benchmark that clones its input inside one timed variant but outside another compares setup decisions. A better comparison feeds equivalent buffers and verifies equivalent parsed output while varying only the intended implementation.\n\n## Try it\n\nCompare owned versus borrowed parsing on small and large records. Record total throughput, allocated bytes, and the lifetime restrictions exposed to the caller.\n\n## Check your work\n\nReport the workload and build settings along with results. A borrowed API is justified only if its lifetime constraints fit real use and the measured improvement matters.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 25,
+      "questionIds": [
+        "rust-arena-lifetime"
+      ]
+    },
+    {
+      "id": "lesson-rust-ring",
+      "title": "One ring, two ownership transfers",
+      "summary": "SPSC · Unsafe · Backpressure",
+      "body": "## The problem to understand\n\nDesign a bounded single-producer, single-consumer ring for non-Copy values. Use a power-of-two capacity and monotonic logical head/tail counters. Explain full/empty detection, the ordering of payload writes and reads, and why safe reuse requires a second synchronization direction. Address destruction, counter wrap, and the behavior when the queue is full. Pseudocode is welcome; a complete unsafe implementation is not required.\n\n## The mental model\n\nTreat each slot as storage whose ownership transfers in two directions. The producer checks a consumer-published head, initializes its exclusively owned slot, then release-stores tail. The consumer acquire-loads tail before reading an initialized value, moves it out, then release-stores head. The producer acquire-loads head before reusing that storage. The second direction prevents a new write from racing with an unfinished read.\n\nEmpty means head equals tail. Full means their bounded logical distance equals capacity. Physical indexes use a mask, while wrap arithmetic must be unsigned and designed so that the logical distance remains unambiguous. Do not create references to uninitialized values. Drop any live elements exactly once after both endpoints stop. Return a value or explicit full error instead of silently overwriting unread data. Padding hot counters may reduce false sharing but is not part of the correctness proof.\n\n## Check your understanding\n\n- Describe release/acquire ownership transfer in both directions.\n- Define full, empty, indexing, and a sound counter-wrap invariant.\n- Handle uninitialized storage and exactly-once destruction of live values.\n- Specify a bounded and explicit full-queue policy.\n\n## Think one step further\n\nHow does the proof change with multiple producers, and why is adding a fetch_add to tail insufficient?\n\n## Primary reading\n\n- [The Rust Book · ownership and concurrency](https://doc.rust-lang.org/book/)",
+      "minutes": 10,
+      "questionIds": [
+        "rust-ring"
+      ],
+      "moduleId": "rust-4",
+      "kind": "workshop",
+      "objectives": [
+        "Describe release/acquire ownership transfer in both directions.",
+        "Define full, empty, indexing, and a sound counter-wrap invariant."
+      ]
+    },
+    {
+      "id": "lesson-rust-pipeline-capstone",
+      "moduleId": "rust-4",
+      "kind": "capstone",
+      "title": "Capstone: a bounded record-processing pipeline",
+      "summary": "Combine parsing, ownership, cancellation, and bounded concurrency",
+      "objectives": [
+        "Combine parsing, ownership, cancellation, and bounded concurrency.",
+        "Defend correctness and overload behavior with evidence."
+      ],
+      "body": "## Core idea\n\nBuild a small pipeline that reads records, validates them, processes them with a fixed worker limit, and emits ordered or explicitly unordered results. Keep a safe implementation as the baseline. The design must define ownership at every handoff and a policy for malformed input, slow consumers, cancellation, and shutdown. A bounded queue limits stored work but still needs a defined producer response when full.\n\n## Worked example\n\nFor four workers and a queue of eight records, accepted work is bounded by queued plus in-flight items, with any extra reader-held record accounted for. A cancelled job cannot silently abandon the sole owner of a completion signal.\n\n## Try it\n\nDeliver the implementation, a state diagram, a resource budget, and tests for empty input, invalid records, a blocked sink, and cancellation. Compare two queue capacities under the same offered load. Run the work locally in your Rust toolchain.\n\n## Check your work\n\nReview against four criteria: no lost or duplicated accepted records under the stated policy; explicit memory and task limits; shutdown that joins workers; and measurements with workload assumptions. Explain any unsafe code or omit it. Completion here records your own review, not automatic verification.\n\n## Primary reading\n\n- [The Rust Book](https://doc.rust-lang.org/book/)",
+      "minutes": 60,
+      "questionIds": [
+        "rust-bounded-channel",
+        "rust-async-lock"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Write basic functions, loops, and structs in any language.",
+    "Be comfortable using a terminal and reading compiler errors."
+  ],
+  "outcomes": [
+    "Explain moves, borrowing, lifetimes, and destruction without relying on trial and error.",
+    "Design trait-based APIs with explicit errors and ownership boundaries.",
+    "Choose synchronization and async execution strategies with bounded resource use.",
+    "Test a concurrent component and defend its safety invariants."
+  ],
+  "modules": [
+    {
+      "id": "rust-1",
+      "title": "Ownership and data modeling",
+      "description": "Learn values, borrowing, enums, and explicit error paths before sharing state.",
+      "level": "Foundation"
+    },
+    {
+      "id": "rust-2",
+      "title": "Abstractions and shared state",
+      "description": "Connect traits and collections to lifetimes and thread-safe ownership.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "rust-3",
+      "title": "Async and memory ordering",
+      "description": "Reason about scheduling, cancellation, and publication across threads.",
+      "level": "Advanced"
+    },
+    {
+      "id": "rust-4",
+      "title": "Building reliable components",
+      "description": "Audit unsafe boundaries, measure behavior, and integrate a bounded pipeline.",
+      "level": "Expert"
+    }
+  ]
+}

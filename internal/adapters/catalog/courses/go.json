@@ -1,0 +1,318 @@
+{
+  "id": "go",
+  "topic": "go",
+  "title": "Go: language foundations to resilient services",
+  "description": "Develop a precise model of Go values, interfaces, concurrency, runtime costs, and service behavior under cancellation and overload.",
+  "lessons": [
+    {
+      "id": "lesson-go-values-pointers",
+      "moduleId": "go-1",
+      "kind": "concept",
+      "title": "Assignment, pointers, and shared storage",
+      "summary": "Trace value copies and shared references",
+      "objectives": [
+        "Trace value copies and shared references.",
+        "Choose pointer receivers for a concrete reason."
+      ],
+      "body": "## Core idea\n\nAssignment copies a Go value. For a struct, that copies its fields; pointer-valued fields still refer to the same objects. Slices copy a descriptor referencing an underlying array, while maps refer to shared map state. A pointer receiver can mutate the original receiver and avoid copying large structs, but also introduces shared mutable access if callers share that pointer. Garbage collection manages reachability, not synchronization.\n\n## Worked example\n\nCopying a struct containing a slice creates a new struct with a slice descriptor pointing at the same array. Editing an existing element through either descriptor can be visible through both. Replacing one descriptor changes only that struct field.\n\n## Try it\n\nDraw an object graph for a struct with an integer, a slice, and a pointer. Predict the effect of assigning the struct and modifying each field in the copy.\n\n## Check your work\n\nYour diagram distinguishes copied fields from shared backing objects. Identify which concurrent edits would require synchronization instead of assuming copying the outer struct isolates it.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 15,
+      "questionIds": [
+        "go-array-value",
+        "go-append-alias",
+        "go-copy-overlap"
+      ]
+    },
+    {
+      "id": "lesson-go-maps-errors",
+      "moduleId": "go-1",
+      "kind": "concept",
+      "title": "Maps, zero values, and explicit errors",
+      "summary": "Use zero values without confusing absence with a stored value",
+      "objectives": [
+        "Use zero values without confusing absence with a stored value.",
+        "Preserve error identity across contextual wrapping."
+      ],
+      "body": "## Core idea\n\nGo zero values make many types usable immediately, but a nil map cannot accept assignments. A map lookup returns a zero value for a missing key; the second boolean distinguishes missing from present. Errors are ordinary values. Wrap them with context when that context helps diagnosis, and use errors.Is or errors.As when callers need to inspect a wrapped cause or type.\n\n## Worked example\n\nA retry count map may contain an explicit zero. `n, ok := retries[id]` distinguishes a new record from an existing record with no retries. Returning a contextual error with `%w` preserves the underlying error for inspection.\n\n## Try it\n\nWrite a lookup function returning a value and a documented missing-entry error. Add context at a caller and test that the original error remains discoverable.\n\n## Check your work\n\nThe test covers missing and present-zero values and avoids comparing error strings. Explain when a nil map is safe to read and why initialization is needed before writing.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 15,
+      "questionIds": [
+        "go-nil-map",
+        "go-map-order",
+        "go-errors-chain",
+        "go-bytes-runes",
+        "go-defer-values"
+      ]
+    },
+    {
+      "id": "lesson-go-interfaces-contracts",
+      "moduleId": "go-1",
+      "kind": "concept",
+      "title": "Small interfaces and behavior contracts",
+      "summary": "Define interfaces around a consumer need",
+      "objectives": [
+        "Define interfaces around a consumer need.",
+        "Separate an interface value from its dynamic contents."
+      ],
+      "body": "## Core idea\n\nA type satisfies an interface by providing its required method set. Consumers can request the smallest behavior they need, keeping tests and implementations independent of a large concrete service. Method sets differ for values and pointers. An interface value carries dynamic type and value information; a typed nil pointer stored inside an interface does not make that interface equal to nil.\n\n## Worked example\n\nA function that only reads bytes can accept an io.Reader instead of a particular file type. A fake reader can inject a short read or error without reproducing the file implementation.\n\n## Try it\n\nDesign a record loader around a small reader interface. Supply a bytes-based implementation and a failing test double. State whether the loader or caller owns closing the source.\n\n## Check your work\n\nBoth implementations satisfy the same contract. The loader handles partial progress and errors, and its resource ownership is documented. Identify whether each implementation satisfies the interface as a value or pointer.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 15,
+      "questionIds": [
+        "go-method-sets"
+      ]
+    },
+    {
+      "id": "lesson-go-slice",
+      "title": "Two slices, one surprise",
+      "summary": "Slices · Aliasing",
+      "body": "## The problem to understand\n\nWhat does this program print? Assume the standard Go semantics for slice capacity and append. Explain which append reuses an array and which requires a new one.\n\n```go\na := make([]int, 2, 3)\na[0], a[1] = 1, 2\nb := append(a, 3)\nb[1] = 9\nc := append(b, 4)\nc[1] = 7\nfmt.Println(a, b, c)\n```\n\n## The mental model\n\nIt prints `[1 9] [1 9 3] [1 7 3 4]`. `a` begins with length 2 and capacity 3. Appending 3 to `a` reuses its backing array, so writing `b[1]` also changes `a[1]`. Appending a fourth element to `b` exceeds its capacity and allocates a new backing array. Updating `c[1]` therefore does not change `a` or `b`.\n\nSlice assignment copies a descriptor, not the elements. A full slice expression such as `a[:len(a):len(a)]` can force a later append to allocate; it does not make existing element accesses independent.\n\n## Check your understanding\n\n- Track length and capacity at each append.\n- Identify the shared backing array of a and b.\n- Explain why c has independent storage.\n\n## Think one step further\n\nHow would you clone a slice so that both element updates and appends are independent?\n\n## Primary reading\n\n- [The Go specification](https://go.dev/ref/spec)",
+      "minutes": 4,
+      "questionIds": [
+        "go-slice"
+      ],
+      "moduleId": "go-1",
+      "kind": "workshop",
+      "objectives": [
+        "Track length and capacity at each append.",
+        "Identify the shared backing array of a and b."
+      ]
+    },
+    {
+      "id": "lesson-go-goroutines-channels",
+      "moduleId": "go-2",
+      "kind": "concept",
+      "title": "Goroutines, channels, and termination",
+      "summary": "Assign an owner to channel closure",
+      "objectives": [
+        "Assign an owner to channel closure.",
+        "Account for every blocking operation in a pipeline."
+      ],
+      "body": "## Core idea\n\nA goroutine is concurrent work that needs a termination condition. A channel coordinates communication; capacity permits a limited number of sends without a receiver, not unlimited progress. Receiving from a closed channel eventually returns the element zero value with ok false. Closing signals that no more sends will occur, so the sender side must coordinate closure after all producers finish.\n\n## Worked example\n\nSeveral workers send results. A coordinator waits for all workers, then closes the results channel. If the consumer exits early, workers also need a cancellation path for blocked sends; closing the channel from the consumer would race with active senders.\n\n## Try it\n\nDraw a three-stage pipeline and annotate every send, receive, wait, and close. Add a consumer that intentionally stops after one result.\n\n## Check your work\n\nAll goroutines can terminate when the consumer stops. No worker sends after closure, and no coordinator waits for a worker whose only exit requires that same coordinator to receive.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 15,
+      "questionIds": [
+        "go-channel-close",
+        "go-nil-channel",
+        "go-waitgroup-order",
+        "go-channel-ownership"
+      ]
+    },
+    {
+      "id": "lesson-go-mutex-or-channel",
+      "moduleId": "go-2",
+      "kind": "concept",
+      "title": "Choose coordination by invariant",
+      "summary": "Choose a mutex or channel based on state ownership",
+      "objectives": [
+        "Choose a mutex or channel based on state ownership.",
+        "Keep compound invariants inside one synchronization boundary."
+      ],
+      "body": "## Core idea\n\nA mutex can protect state shared by several goroutines; a channel can transfer work to a goroutine that owns the state. Both can be correct. Choose based on the invariant and lifetime rather than a slogan. A concurrent map operation does not make a multi-step read-modify-write atomic. Keep the entire logical operation protected and avoid blocking external calls while holding a broad lock.\n\n## Worked example\n\nA balance check followed by decrement must happen together. Locking only the lookup and later locking the update still permits two callers to spend the same balance. A single owner goroutine can serialize the same transaction through messages.\n\n## Try it\n\nImplement a bounded reservation counter with a mutex. Sketch an equivalent owner-goroutine design. Include rejection when the requested reservation exceeds the remaining capacity.\n\n## Check your work\n\nBoth designs preserve nonnegative capacity across simultaneous callers. Compare cancellation and shutdown behavior as well as throughput; the race detector alone cannot detect every logical invariant violation.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 15,
+      "questionIds": [
+        "go-publication",
+        "go-atomic-snapshot"
+      ]
+    },
+    {
+      "id": "lesson-go-typed-nil",
+      "title": "The error that is nil and not nil",
+      "summary": "Interfaces · Errors",
+      "body": "## The problem to understand\n\nThe caller treats a successful operation as a failure because `err != nil` is true. Explain the interface representation responsible for this result and repair the return path. Do not solve it by inspecting concrete types at every call site.\n\n```go\ntype ReadError struct { Path string }\nfunc (e *ReadError) Error() string { return \"read failed\" }\n\nfunc load() error {\n    var err *ReadError\n    return err\n}\n```\n\n## The mental model\n\nAn interface value carries a dynamic type and a dynamic value. Returning the nil `*ReadError` converts it into an `error` whose dynamic type is `*ReadError` and whose value is a nil pointer. An interface compares equal to nil only when it has neither a dynamic type nor a dynamic value.\n\nOn success, return the literal `nil` as the error result. On failure, return an actual error. Keep typed nil pointers out of successful interface returns. A nil-tolerant Error method may avoid a panic when printing the value but does not change the interface’s equality to nil.\n\n## Check your understanding\n\n- Describe both components of the interface value.\n- Explain why a typed nil pointer produces a non-nil error interface.\n- Return a literal nil on success at the API boundary.\n\n## Think one step further\n\nCan errors.As report a matching concrete pointer type for this value? What must the caller check afterward?\n\n## Primary reading\n\n- [The Go specification](https://go.dev/ref/spec)",
+      "minutes": 4,
+      "questionIds": [
+        "go-typed-nil"
+      ],
+      "moduleId": "go-2",
+      "kind": "workshop",
+      "objectives": [
+        "Describe both components of the interface value.",
+        "Explain why a typed nil pointer produces a non-nil error interface."
+      ]
+    },
+    {
+      "id": "lesson-go-cancel",
+      "title": "Cancellation is a protocol",
+      "summary": "Context · Goroutine leaks",
+      "body": "## The problem to understand\n\nImplement `first(ctx, replicas)` to query three replicas concurrently and return the first successful result. A failed replica must not prevent another from succeeding. Once a result wins or the caller cancels, remaining goroutines must be able to exit. Explain the required contract for the underlying query function and what happens if every replica fails.\n\n```go\ntype Result struct { Value string; Err error }\ntype Replica interface { Query(context.Context) (string, error) }\n\nfunc first(ctx context.Context, replicas []Replica) (string, error) {\n    // Implement here.\n}\n```\n\n## The mental model\n\nCreate a child context and defer its cancellation. Give each worker a context-aware query and a way to report exactly one result. A result channel buffered to the number of workers lets each worker publish even after the coordinator exits; alternatively select on both channel send and cancellation. Loop over responses until a success arrives, the context ends, or all replicas fail. Return an aggregate or representative error for the all-failed case.\n\nCancellation is cooperative: calling cancel does not kill a goroutine. The query must propagate the context to network operations and must not wait forever on non-context-aware work. Bound the replica fanout. A WaitGroup alone does not make a blocked sender or network call cancellable.\n\n## Check your understanding\n\n- Wait for the first success rather than the first response.\n- Prevent abandoned workers from blocking while publishing results.\n- Propagate a child context to cancellable queries and cancel losers.\n- Handle empty inputs, caller cancellation, and all-replica failure.\n\n## Think one step further\n\nHow would you delay secondary requests to reduce load while still improving tail latency?\n\n## Primary reading\n\n- [The Go specification](https://go.dev/ref/spec)",
+      "minutes": 6,
+      "questionIds": [
+        "go-cancel",
+        "go-select-fairness",
+        "go-context-values",
+        "go-timer-cancel"
+      ],
+      "moduleId": "go-2",
+      "kind": "workshop",
+      "objectives": [
+        "Wait for the first success rather than the first response.",
+        "Prevent abandoned workers from blocking while publishing results."
+      ]
+    },
+    {
+      "id": "lesson-go-runtime-gc",
+      "moduleId": "go-3",
+      "kind": "concept",
+      "title": "Allocation, reachability, and the garbage collector",
+      "summary": "Distinguish a reachable allocation from a useful allocation",
+      "objectives": [
+        "Distinguish a reachable allocation from a useful allocation.",
+        "Explain why collection does not fix goroutine leaks."
+      ],
+      "body": "## Core idea\n\nThe collector reclaims unreachable memory; it cannot infer that your program no longer needs reachable data. Global caches, blocked goroutines, and small references into large objects can keep allocations alive. Escape analysis influences allocation placement, but placement decisions depend on the compiler and program. Focus first on object lifetimes and allocation volume, then inspect actual profiles.\n\n## Worked example\n\nA goroutine blocked while holding a request buffer keeps that buffer reachable. Clearing a cache entry will not free it if another reference remains in the blocked goroutine. A short slice may retain the entire original backing array.\n\n## Try it\n\nCreate a retention diagram for a request handed to a background worker. Identify when each reference disappears and compare retaining a subslice with copying the needed bytes.\n\n## Check your work\n\nThe explanation separates logical live data, retained backing storage, and memory returned to the OS. A repair addresses the retaining reference or lifetime rather than repeatedly forcing GC.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 15,
+      "questionIds": [
+        "go-pool-lifetime",
+        "go-escape-analysis"
+      ]
+    },
+    {
+      "id": "lesson-go-diagnostic-tools",
+      "moduleId": "go-3",
+      "kind": "workshop",
+      "title": "Race detection, benchmarks, and profiles",
+      "summary": "Match a diagnostic tool to a question",
+      "objectives": [
+        "Match a diagnostic tool to a question.",
+        "Construct a benchmark with equivalent work."
+      ],
+      "body": "## Core idea\n\nRace detection observes unsynchronized conflicting accesses on executed paths. CPU profiles identify where sampled execution time goes; heap profiles describe allocation or retained-object patterns depending on the view. Benchmarks answer a defined workload question. A clean race run does not prove race freedom for paths never exercised, and a fast microbenchmark does not demonstrate acceptable service tail latency.\n\n## Worked example\n\nIf a handler stalls on a lock, a CPU profile may show little active computation during the wait. Contention and goroutine diagnostics can be more informative. If throughput falls while allocations climb, inspect allocation sites before pooling objects.\n\n## Try it\n\nPrepare a local check using `go test -race`, a benchmark with `-benchmem`, and a CPU or heap profile. Record one explicit hypothesis and the evidence that would reject it.\n\n## Check your work\n\nKeep fixture construction and input generation consistent. Validate benchmark results and report concurrency, input size, and build conditions. Do not treat one tool output as a universal performance diagnosis.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 25,
+      "questionIds": [
+        "go-race-visibility",
+        "go-profile-causality"
+      ]
+    },
+    {
+      "id": "lesson-go-publication",
+      "title": "A channel send is a memory edge",
+      "summary": "Memory model · Channels",
+      "body": "## The problem to understand\n\nA goroutine writes a shared variable and then sends on an unbuffered channel. Another goroutine receives and reads the variable. Explain why this is safe without a mutex for this one-shot handoff. Then change the channel to capacity 1: which producer-write/consumer-read guarantee remains, and which reverse-direction guarantee no longer follows from the first send?\n\n```go\nvar payload int\nready := make(chan struct{})\ngo func() {\n    payload = 42\n    ready <- struct{}{}\n}()\n<-ready\nfmt.Println(payload)\n```\n\n## The mental model\n\nThe write is sequenced before the send. A channel send is synchronized before completion of its corresponding receive. The receive completes before the consumer reads, so the write happens before that read. This forward publication guarantee holds for both buffered and unbuffered channels.\n\nFor an unbuffered channel, the receive is also synchronized before completion of the corresponding send. The producer can use completion as evidence that the receiver reached the handoff. With capacity 1, the first send may complete without any receiver. The buffered-channel rule instead relates the kth receive to completion of the (k+C)th send. These rules do not make arbitrary later concurrent writes safe.\n\n## Check your understanding\n\n- Construct the forward happens-before chain explicitly.\n- Keep forward publication valid for a buffered channel.\n- Identify the extra unbuffered rendezvous guarantee and its buffered limitation.\n\n## Think one step further\n\nIf the consumer writes a second variable before receiving, when may the producer safely read it?\n\n## Primary reading\n\n- [The Go memory model · channel communication](https://go.dev/ref/mem)",
+      "minutes": 4,
+      "questionIds": [
+        "go-publication",
+        "go-atomic-snapshot"
+      ],
+      "moduleId": "go-3",
+      "kind": "workshop",
+      "objectives": [
+        "Construct the forward happens-before chain explicitly.",
+        "Keep forward publication valid for a buffered channel."
+      ]
+    },
+    {
+      "id": "lesson-go-retained-memory",
+      "title": "The 32-byte slice holding 64 MiB",
+      "summary": "GC · Memory retention",
+      "body": "## The problem to understand\n\nA service reads 64 MiB blobs, extracts a 32-byte identifier, and stores each identifier in a long-lived cache. Heap usage grows far beyond the total identifier size. Explain the retention mechanism, show a repair, and describe how to confirm the hypothesis without treating allocation rate and live heap as the same metric.\n\n```go\nfunc cacheID(blob []byte) {\n    id := blob[:32:32]\n    cache.Put(id) // cache retains the slice\n}\n```\n\n## The mental model\n\nThe small subslice still points into the large backing array. As long as the cache retains that slice, the garbage collector must retain the backing allocation. Limiting the slice capacity does not copy its elements or release the array.\n\nClone the identifier into its own storage, for example `bytes.Clone(blob[:32])` or `append([]byte(nil), blob[:32]...)`. This increases the small allocation count while sharply reducing retained memory. Compare in-use heap profiles after comparable workloads and GC points, then inspect retaining call paths. Allocation profiles answer a different question: total bytes allocated over time. Also check that the cache has a bounded eviction policy.\n\n## Check your understanding\n\n- Identify the backing array as the retained object.\n- Copy the identifier rather than merely reducing slice capacity.\n- Use live-heap evidence and consider cache bounds.\n\n## Think one step further\n\nCould converting the identifier to a string solve retention? Discuss normal conversions versus unsafe zero-copy conversions.\n\n## Primary reading\n\n- [The Go specification](https://go.dev/ref/spec)",
+      "minutes": 5,
+      "questionIds": [
+        "go-retained-memory"
+      ],
+      "moduleId": "go-3",
+      "kind": "workshop",
+      "objectives": [
+        "Identify the backing array as the retained object.",
+        "Copy the identifier rather than merely reducing slice capacity."
+      ]
+    },
+    {
+      "id": "lesson-go-http-lifecycle",
+      "moduleId": "go-4",
+      "kind": "concept",
+      "title": "Deadlines and graceful HTTP shutdown",
+      "summary": "Propagate request cancellation to downstream work",
+      "objectives": [
+        "Propagate request cancellation to downstream work.",
+        "Separate shutdown admission from draining existing work."
+      ],
+      "body": "## Core idea\n\nA request has a lifetime spanning admission, parsing, downstream calls, and response writing. Context can communicate cancellation and deadlines to cooperative operations, but it does not forcibly stop arbitrary goroutines. Configure timeouts at the relevant server and client boundaries. During shutdown, stop accepting new work, allow a bounded drain, and close owned resources after their users have stopped.\n\n## Worked example\n\nA handler with a two-second budget cannot spend two seconds on each of three sequential downstream calls. Pass the remaining deadline through the chain. A background worker that outlives the response needs an explicit application-level owner.\n\n## Try it\n\nWrite a lifecycle diagram for an HTTP service with a worker queue. Include a shutdown signal during an in-flight request and a dependency that ignores cancellation.\n\n## Check your work\n\nThe design has a finite drain budget and a defined final action when it expires. It distinguishes request-scoped work from deliberately persistent jobs and accounts for resource cleanup.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 15,
+      "questionIds": [
+        "go-http-body",
+        "go-graceful-server"
+      ]
+    },
+    {
+      "id": "lesson-go-test-failure-paths",
+      "moduleId": "go-4",
+      "kind": "workshop",
+      "title": "Test failure paths without timing guesses",
+      "summary": "Coordinate concurrent tests with explicit signals",
+      "objectives": [
+        "Coordinate concurrent tests with explicit signals.",
+        "Test overload and cancellation deterministically."
+      ],
+      "body": "## Core idea\n\nConcurrent tests become fragile when correctness depends on sleeping long enough. Use channels, controllable dependencies, and injected clocks where applicable to make the target state observable. Test the behavior while a dependency is blocked, then release it deliberately. Timeouts are useful as test failure bounds; they should not be the only mechanism establishing an interleaving.\n\n## Worked example\n\nA fake dependency signals started and waits on release. The test waits for started, cancels the request, and asserts the handler returns. It then releases the dependency and verifies that workers finish without sending into an abandoned channel.\n\n## Try it\n\nDesign tests for queue-full rejection, cancellation before admission, cancellation during work, and shutdown while idle. State the synchronization signal proving each precondition.\n\n## Check your work\n\nTests fail promptly on leaked work, can run repeatedly, and avoid relying on machine speed. Distinguish an operation that was never accepted from one accepted before cancellation.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 25,
+      "questionIds": [
+        "go-cancel",
+        "go-race-visibility"
+      ]
+    },
+    {
+      "id": "lesson-go-overload",
+      "title": "A worker pool that fails predictably",
+      "summary": "Backpressure · Runtime · Overload",
+      "body": "## The problem to understand\n\nDesign a Go request-processing service with at most 64 active jobs, a queue of at most 256 jobs, caller deadlines, and graceful shutdown. Arrival rate can exceed service capacity for minutes. Specify admission, queue cancellation, ownership of channel closure, response delivery after caller departure, and the metrics needed to distinguish CPU saturation from downstream slowness.\n\n## The mental model\n\nUse a fixed worker count and a bounded queue. Admission should reject or wait only until a short admission deadline; never create an unbounded goroutine per queued request. Carry the caller context with the job and skip expired work before starting it. Workers must report via a buffered one-result channel or a cancellation-aware send so an absent caller cannot pin a worker.\n\nGive a single coordinator ownership of queue closure after admission stops. Distinguish draining accepted work from immediate cancellation and impose a shutdown deadline. Avoid closing a channel while another goroutine may send. Measure queue depth and age, admissions rejected, active jobs, deadline expirations, CPU profiles, goroutine stacks, and downstream latency. Limits bound resource use; they do not create capacity. An explicit overload response is better than letting every deadline fail behind a huge queue.\n\n## Check your understanding\n\n- Bound both active jobs and queued jobs, including admission wait.\n- Prevent expired queued work and abandoned response sends from leaking resources.\n- Specify single-owner closure and bounded graceful shutdown.\n- Connect queue, runtime, and downstream metrics to capacity decisions.\n\n## Think one step further\n\nHow would you introduce per-tenant fairness without letting one tenant occupy every queued slot?\n\n## Primary reading\n\n- [The Go specification](https://go.dev/ref/spec)",
+      "minutes": 9,
+      "questionIds": [
+        "go-overload"
+      ],
+      "moduleId": "go-4",
+      "kind": "workshop",
+      "objectives": [
+        "Bound both active jobs and queued jobs, including admission wait.",
+        "Prevent expired queued work and abandoned response sends from leaking resources."
+      ]
+    },
+    {
+      "id": "lesson-go-service-capstone",
+      "moduleId": "go-4",
+      "kind": "capstone",
+      "title": "Capstone: a service with a bounded work budget",
+      "summary": "Integrate request lifetimes, bounded work, and observability",
+      "objectives": [
+        "Integrate request lifetimes, bounded work, and observability.",
+        "Demonstrate service behavior under slow dependencies and overload."
+      ],
+      "body": "## Core idea\n\nBuild a local HTTP service that accepts jobs into a bounded worker pool and exposes status. Define request size limits, queue capacity, worker count, deadlines, and a clear overload response. Use in-memory storage to keep the exercise focused. Document whether a disconnected client cancels work or whether the job remains owned by the service.\n\n## Worked example\n\nWith two workers and four waiting slots, the seventh simultaneous long-running job must encounter an explicit admission decision. A larger channel delays that decision but does not increase worker service capacity.\n\n## Try it\n\nDeliver code, concurrency diagrams, and tests for cancellation, failure, duplicate submission policy, and graceful shutdown. Run the race detector and load the service beyond capacity while recording latency, rejection count, and goroutine count.\n\n## Check your work\n\nAcceptance requires bounded queued work, no unexplained goroutine growth after draining, explicit errors, and a shutdown that terminates. Report the offered load and dependency delay. Mark completion only after reviewing these properties locally.\n\n## Primary reading\n\n- [Effective Go](https://go.dev/doc/effective_go)\n- [Go language specification](https://go.dev/ref/spec)",
+      "minutes": 60,
+      "questionIds": [
+        "go-weighted-admission"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Write functions and simple data structures in any language.",
+    "Know basic command-line and HTTP concepts."
+  ],
+  "outcomes": [
+    "Reason about slices, maps, interfaces, and explicit errors.",
+    "Build cancellable goroutine pipelines with clear ownership and shutdown.",
+    "Use race detection, profiling, and benchmarks to test hypotheses.",
+    "Design a bounded service with observable resource limits and graceful shutdown."
+  ],
+  "modules": [
+    {
+      "id": "go-1",
+      "title": "Values and contracts",
+      "description": "Understand assignment, collections, interfaces, and error handling.",
+      "level": "Foundation"
+    },
+    {
+      "id": "go-2",
+      "title": "Concurrency and ownership",
+      "description": "Coordinate goroutines, cancellation, and shared state.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "go-3",
+      "title": "Runtime and diagnosis",
+      "description": "Connect memory visibility and retention to measurement.",
+      "level": "Advanced"
+    },
+    {
+      "id": "go-4",
+      "title": "Service engineering",
+      "description": "Bound requests, test failure paths, and build a resilient service.",
+      "level": "Expert"
+    }
+  ]
+}

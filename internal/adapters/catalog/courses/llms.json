@@ -1,0 +1,317 @@
+{
+  "id": "llms",
+  "topic": "llms",
+  "title": "Language models: tokens, training, and evaluation",
+  "description": "Understand decoder language models from tokenization and attention through training objectives, retrieval, adaptation, and defensible evaluation.",
+  "lessons": [
+    {
+      "id": "lesson-llms-tokenization",
+      "moduleId": "llms-1",
+      "kind": "concept",
+      "title": "Tokens are a learned representation of text",
+      "summary": "Distinguish text length from token count",
+      "objectives": [
+        "Distinguish text length from token count.",
+        "Keep tokenizer and model vocabularies aligned."
+      ],
+      "body": "## Core idea\n\nA tokenizer maps text into identifiers consumed by the model. Subword and byte-oriented schemes can split the same visible word differently depending on whitespace, context, and vocabulary. Token count affects context and computation; it is not a fixed multiple of character count. Special tokens and chat templates carry structural meaning, so using the wrong tokenizer or formatting can change the model input substantially.\n\n## Worked example\n\nThe strings `price`, ` price`, and a non-ASCII spelling may have different segmentations. An application truncating by characters can still exceed a token budget or remove important boundary markers.\n\n## Try it\n\nUsing one local tokenizer or its documented output, compare whitespace, code, numbers, and multilingual strings. Record exact token IDs, decoded output, and counts.\n\n## Check your work\n\nResults identify the tokenizer and revision. Explain any normalization or special-token insertion and do not generalize one tokenizer’s segmentation to every model.\n\n## Primary reading\n\n- [Hugging Face Tokenizers](https://huggingface.co/docs/tokenizers/index)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-token-count"
+      ]
+    },
+    {
+      "id": "lesson-llms-embeddings-logits",
+      "moduleId": "llms-1",
+      "kind": "concept",
+      "title": "From embeddings to a next-token distribution",
+      "summary": "Track the role of embeddings, hidden states, and logits",
+      "objectives": [
+        "Track the role of embeddings, hidden states, and logits.",
+        "Calculate a simple softmax and cross-entropy loss."
+      ],
+      "body": "## Core idea\n\nToken IDs index learned embeddings. Transformer layers produce contextual hidden states, and an output projection produces vocabulary logits. Softmax converts logits to a probability distribution; training can minimize negative log probability of the target token. A low loss measures prediction on the evaluated distribution, not verified truth or a guarantee that generated statements are grounded.\n\n## Worked example\n\nFor a toy vocabulary with predicted target probability 0.25, negative log likelihood is about 1.386 natural-log units. Increasing that probability to 0.5 reduces the loss to about 0.693.\n\n## Try it\n\nCompute normalized probabilities for three toy logits using a numerically stable softmax that subtracts the maximum. Compute loss for two different target IDs.\n\n## Check your work\n\nProbabilities sum to one, the chosen target determines the loss, and subtracting a common logit constant preserves the distribution. Explain why token probability is not a calibrated truth score.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-next-token",
+        "llms-embedding-shape",
+        "llms-softmax-shift",
+        "llms-perplexity"
+      ]
+    },
+    {
+      "id": "lesson-llms-attention-block",
+      "moduleId": "llms-1",
+      "kind": "concept",
+      "title": "What attention contributes to a transformer block",
+      "summary": "Track queries, keys, values, and output shapes",
+      "objectives": [
+        "Track queries, keys, values, and output shapes.",
+        "Separate attention mixing from the rest of the block."
+      ],
+      "body": "## Core idea\n\nAttention forms compatibility scores from queries and keys, normalizes them over allowed positions, and mixes value vectors. Multiple heads learn different projections. A transformer block also contains other operations such as feed-forward layers, normalization, and residual connections. Position information is needed because attention alone does not encode the intended sequence ordering. Exact block conventions vary by architecture.\n\n## Worked example\n\nFor one head with sequence length 4 and head dimension 8, Q and K can each have shape 4 by 8, scores 4 by 4, and the value-weighted output 4 by 8. A causal mask excludes later positions.\n\n## Try it\n\nWrite shapes for a batch of two sequences with three heads. Mark which axis softmax normalizes and which positions a causal query can use.\n\n## Check your work\n\nThe weighted sum uses values, not token IDs. The output preserves one vector per query position, and the mask is applied before normalization in a way that excludes forbidden positions.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-attention-scale",
+        "llms-multihead",
+        "llms-residual-path"
+      ]
+    },
+    {
+      "id": "lesson-llms-causal-mask",
+      "title": "The future token that leaked into training",
+      "summary": "Attention · Causal masking",
+      "body": "## The problem to understand\n\nA decoder-only model is trained to predict the next token. During training, all tokens in a sequence are available in memory. Why must self-attention prevent a position from attending to later input positions? Assume labels are shifted correctly.\n\n## The mental model\n\nThe model must learn a conditional distribution based only on the prefix available at generation time. If attention can read later positions, it can exploit target information that will not be available during autoregressive inference. This creates a training/inference mismatch and can make training loss misleadingly low.\n\nA causal mask removes those future-position attention edges, commonly by assigning their pre-softmax scores negative infinity. Correct label shifting is a separate requirement. Padding masks, document boundaries, and positional information solve other problems and do not substitute for causal masking.\n\n## Check your understanding\n\n- Connect next-token prediction to prefix-only information.\n- Identify future-token leakage and inference mismatch.\n- Distinguish causal masking from label shifting and padding masks.\n\n## Think one step further\n\nWhy does a bidirectional encoder used for classification not need the same causal restriction?\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)",
+      "minutes": 4,
+      "questionIds": [
+        "llms-causal-mask"
+      ],
+      "moduleId": "llms-1",
+      "kind": "workshop",
+      "objectives": [
+        "Connect next-token prediction to prefix-only information.",
+        "Identify future-token leakage and inference mismatch."
+      ]
+    },
+    {
+      "id": "lesson-llms-training-objective",
+      "moduleId": "llms-2",
+      "kind": "concept",
+      "title": "Training data, shifted labels, and masked loss",
+      "summary": "Build next-token targets with a causal input contract",
+      "objectives": [
+        "Build next-token targets with a causal input contract.",
+        "Separate padding masks from causal masks and loss masks."
+      ],
+      "body": "## Core idea\n\nIn causal training, each position predicts the next token from the available prefix. Input and target positions must align correctly, and attention must exclude future inputs. Padding and task-specific loss masking address different concerns. Data splits need separation at the level that prevents leakage, such as document or conversation families rather than randomly splitting nearly identical chunks.\n\n## Worked example\n\nFor tokens A B C D, predictions from prefixes ending at A, B, and C target B, C, and D. A padding token should not accidentally become a meaningful target just because batches have equal rectangular shape.\n\n## Try it\n\nConstruct a tiny batch with two unequal sequences. Write input IDs, targets, attention masks, and loss-inclusion masks. Include an intentionally leaked target and diagnose it.\n\n## Check your work\n\nEach counted loss term has only its allowed prefix. The split contains no copied or near-duplicate evaluation examples in training, and mask roles are documented rather than conflated.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-padding-loss",
+        "llms-split-near-duplicates"
+      ]
+    },
+    {
+      "id": "lesson-llms-optimization-adaptation",
+      "moduleId": "llms-2",
+      "kind": "concept",
+      "title": "Optimization, pretraining, and supervised adaptation",
+      "summary": "Distinguish changing weights from changing inference inputs",
+      "objectives": [
+        "Distinguish changing weights from changing inference inputs.",
+        "Explain training hyperparameters as experimental choices."
+      ],
+      "body": "## Core idea\n\nPretraining learns broad predictive patterns from a corpus; supervised adaptation changes model weights for a narrower distribution or response behavior. Prompting changes the input without updating weights. Gradient accumulation changes how examples contribute to an optimizer step, while learning rate, precision, and clipping affect optimization. Parameter-efficient methods reduce which parameters are trained but still require data quality and evaluation.\n\n## Worked example\n\nA prompt containing three examples is in-context conditioning. Training an adapter on those examples is weight adaptation. The two can produce different generalization, cost, and deployment behavior even with identical example text.\n\n## Try it\n\nDesign a small adaptation experiment comparing a fixed prompt baseline with a proposed training change. Freeze the held-out set, define the optimizer budget, and record model and data revisions.\n\n## Check your work\n\nThe comparison controls evaluation prompts and task distribution. Training loss is reported separately from held-out task performance, and a lower training loss is not taken as evidence of improved generalization.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-pretrain-finetune",
+        "llms-lora-count",
+        "llms-preference-objective",
+        "llms-compute-budget",
+        "llms-adapter-data"
+      ]
+    },
+    {
+      "id": "lesson-llms-attention-scores",
+      "title": "Count the attention scores",
+      "summary": "Attention · Quadratic scaling",
+      "body": "## The problem to understand\n\nFor one sequence, a standard dense attention layer has 16 query heads and sequence length 1,024. Before masking, each head forms a full sequence-by-sequence score matrix. How many score elements are there across all heads? Ignore batch size, layers, and head dimension. Enter an integer.\n\n## The mental model\n\nEach head has `1,024 × 1,024 = 1,048,576` score elements. Across 16 heads, that is 16,777,216 elements. If materialized as two-byte values, these scores alone would occupy 32 MiB, excluding softmax intermediates and other tensors.\n\nThis counts the mathematical dense matrix, not a promise that an optimized implementation materializes it in full. Tiled exact-attention kernels can avoid storing the complete score matrix in high-bandwidth memory while retaining quadratic arithmetic for dense attention. Causal masking reduces valid interactions but does not automatically change a naive allocation’s shape.\n\n## Check your understanding\n\n- Multiply sequence length by itself for each head.\n- Multiply by the number of query heads.\n- Separate mathematical score count from optimized memory materialization.\n\n## Think one step further\n\nWhat changes in arithmetic and memory if sequence length doubles?\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)",
+      "minutes": 4,
+      "questionIds": [
+        "llms-attention-scores"
+      ],
+      "moduleId": "llms-2",
+      "kind": "workshop",
+      "objectives": [
+        "Multiply sequence length by itself for each head.",
+        "Multiply by the number of query heads."
+      ]
+    },
+    {
+      "id": "lesson-llms-label-leak",
+      "title": "The suspiciously perfect language model",
+      "summary": "Training · Teacher forcing · Evaluation",
+      "body": "## The problem to understand\n\nA language model’s training loss is nearly zero from the first epoch, yet generated text is poor. The pipeline feeds token IDs into the model and uses the identical token at each position as the target without shifting. Explain the leak. Describe a correct next-token loss alignment and two checks that would distinguish this bug from normal teacher forcing.\n\n## The mental model\n\nIf a position can read its own token embedding and is trained to output that same token, the task can collapse into copying instead of predicting the next token. Standard next-token training aligns logits at position t with the token at t+1, while a causal mask permits input positions up to t. Some model APIs perform the shift internally, so the data and model loss contract must be inspected before adding another shift.\n\nVerify a tiny hand-written sequence by printing the exact input/target pairs and ignored positions. Test a short prefix and confirm the target is the next unseen token, not the final visible token. Use held-out prefix-only generation and ensure packed-document/padding masks are correct. Teacher forcing supplies the true prior prefix; it does not allow the target token to be its own input at that prediction position.\n\n## Check your understanding\n\n- Identify same-position copying as a leakage path.\n- Specify logits[t] versus token[t+1] with a causal prefix.\n- Check whether the model loss already shifts internally.\n- Verify hand-constructed pairs and prefix-only generation.\n\n## Think one step further\n\nHow could a packed-sequence boundary leak information between unrelated documents?\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)",
+      "minutes": 5,
+      "questionIds": [
+        "llms-label-leak"
+      ],
+      "moduleId": "llms-2",
+      "kind": "workshop",
+      "objectives": [
+        "Identify same-position copying as a leakage path.",
+        "Specify logits[t] versus token[t+1] with a causal prefix."
+      ]
+    },
+    {
+      "id": "lesson-llms-evaluation-design",
+      "moduleId": "llms-3",
+      "kind": "concept",
+      "title": "Evaluate a task, not an impression",
+      "summary": "Define task metrics and a held-out evaluation protocol",
+      "objectives": [
+        "Define task metrics and a held-out evaluation protocol.",
+        "Separate aggregate improvement from subgroup regressions."
+      ],
+      "body": "## Core idea\n\nAn evaluation needs a target task, representative inputs, expected behavior, and a scoring method. Exact matching, human rubric review, and model-based judging have different error modes. Keep a held-out set away from iterative prompt tuning and inspect relevant slices. Repeated samples can estimate variability when decoding is stochastic. A single appealing response is weak evidence of reliability.\n\n## Worked example\n\nAn extraction task can score field accuracy and invalid JSON separately. A system improving average accuracy while failing all long inputs may be unsuitable even when the headline metric rises.\n\n## Try it\n\nCreate a 20-case synthetic evaluation with short, long, ambiguous, and unanswerable inputs. Define a rubric before running a baseline and record per-case results.\n\n## Check your work\n\nThe rubric handles abstention and unsupported claims. Separate development and held-out cases, report counts alongside rates, and identify evaluator disagreement instead of hiding it.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-calibration",
+        "llms-judge-bias",
+        "llms-model-migration"
+      ]
+    },
+    {
+      "id": "lesson-llms-prompt-rag-adaptation",
+      "moduleId": "llms-3",
+      "kind": "concept",
+      "title": "Choose prompting, retrieval, or fine-tuning by failure mode",
+      "summary": "Connect a model change to an observed failure category",
+      "objectives": [
+        "Connect a model change to an observed failure category.",
+        "Evaluate retrieval and generation as separate components."
+      ],
+      "body": "## Core idea\n\nPrompting can clarify instructions and output format. Retrieval supplies external context at inference time. Fine-tuning changes learned behavior or task distribution. These interventions address overlapping but different failures. Retrieval still needs relevant, permitted, fresh context, and generation can misuse good evidence. Fine-tuning is not a reliable replacement for an authoritative changing database.\n\n## Worked example\n\nIf the correct answer exists in a document but is never retrieved, rewriting the generation prompt may not repair recall. If the right passage is present but the answer invents an unsupported detail, inspect grounding and response behavior.\n\n## Try it\n\nClassify ten failed cases as missing evidence, retrieval miss, misleading context, instruction failure, or reasoning failure. Propose a minimal intervention and an evaluation that can disprove it.\n\n## Check your work\n\nMeasure retrieval quality and grounded-answer quality independently. Compare against the same baseline and do not assume a retrieved citation proves the generated claim is supported.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-retrieval-permissions",
+        "llms-retrieval-ablation"
+      ]
+    },
+    {
+      "id": "lesson-llms-rag",
+      "title": "Did retrieval help, or just sound convincing?",
+      "summary": "RAG · Evaluation · Grounding",
+      "body": "## The problem to understand\n\nDesign an evaluation for a retrieval-augmented technical assistant over internal documentation. It should distinguish retrieval failures, incorrect synthesis, unsupported claims, and unanswerable questions. Include dataset construction, source freshness, citation checking, leakage prevention, and a comparison with a no-retrieval baseline.\n\n## The mental model\n\nBuild a held-out set of realistic questions with reference answers, supporting document spans, and explicit unanswerable or conflicting-source cases. Version the corpus and split by document/time where appropriate to avoid near-duplicate leakage. Measure retrieval recall of evidence separately from answer correctness, citation entailment, and abstention behavior. Finding the right document does not prove the generated claim is supported by the cited span.\n\nCompare no retrieval, retrieved context, and oracle evidence to localize failures. Track latency and cost alongside quality. Use a blinded human review sample and calibrated automated checks rather than treating a single model judge as ground truth. Test stale documents, adversarial instructions in retrieved text, and terminology shifts. An answer can be fluent and factually plausible while still being unsupported by the available corpus.\n\n## Check your understanding\n\n- Separate evidence retrieval from synthesis and citation support.\n- Include unanswerable/conflicting cases and versioned held-out data.\n- Compare no-retrieval, real retrieval, and oracle-context baselines.\n- Validate judging and test stale or untrusted retrieved content.\n\n## Think one step further\n\nHow would you evaluate answers that require joining facts from several documents?\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)",
+      "minutes": 8,
+      "questionIds": [
+        "llms-rag"
+      ],
+      "moduleId": "llms-3",
+      "kind": "workshop",
+      "objectives": [
+        "Separate evidence retrieval from synthesis and citation support.",
+        "Include unanswerable/conflicting cases and versioned held-out data."
+      ]
+    },
+    {
+      "id": "lesson-llms-sampling",
+      "title": "Temperature cannot repair missing knowledge",
+      "summary": "Sampling · Temperature · Calibration",
+      "body": "## The problem to understand\n\nFor fixed finite logits, consider ordinary softmax sampling at temperature T > 0. Which statements are correct? Select all that apply. Ignore top-k/top-p truncation and numerical rounding.\n\n## The mental model\n\nDividing logits by a positive temperature preserves their ordering. Lower temperature sharpens the distribution, while higher temperature flattens it toward uniformity over the fixed finite vocabulary. Temperature changes how the model’s scores are sampled; it does not insert missing facts or guarantee correctness. Even a very confident argmax may be false.\n\nFor distinct finite logits, entropy increases as temperature rises. The exact behavior of a full generation also depends on the prefix, stopping rules, and any truncation or other logit processors, which are excluded from the mathematical premise here.\n\n## Check your understanding\n\n- Preserve logit ranking under positive scaling.\n- Explain sharpening/flattening without claiming factual improvement.\n- Separate token-distribution behavior from complete-answer correctness.\n\n## Think one step further\n\nHow does adding top-p truncation change which tokens remain available as temperature changes?\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)",
+      "minutes": 4,
+      "questionIds": [
+        "llms-sampling"
+      ],
+      "moduleId": "llms-3",
+      "kind": "workshop",
+      "objectives": [
+        "Preserve logit ranking under positive scaling.",
+        "Explain sharpening/flattening without claiming factual improvement."
+      ]
+    },
+    {
+      "id": "lesson-llms-context-budget",
+      "moduleId": "llms-4",
+      "kind": "concept",
+      "title": "Context is a finite evidence budget",
+      "summary": "Budget tokens across instructions, evidence, history, and output",
+      "objectives": [
+        "Budget tokens across instructions, evidence, history, and output.",
+        "Explain why truncation and position can affect results."
+      ],
+      "body": "## Core idea\n\nA context window limits the input and generated continuation under the model’s conventions. More included text can increase cost and introduce irrelevant or conflicting evidence. Truncation needs a deliberate policy preserving required instructions and useful context. Performance at short lengths does not establish reliability at long lengths; evaluate relevant information at different positions and with distractors.\n\n## Worked example\n\nFor a synthetic 8,000-token budget, 1,000 tokens of instructions, 2,000 history, 3,500 evidence, and 1,500 reserved output leave no space for unexpected template overhead. Count the actual formatted input rather than only document text.\n\n## Try it\n\nDesign a context allocator with a hard budget and an evidence-priority policy. Test a fact near the start, middle, and end, with varying amounts of irrelevant text.\n\n## Check your work\n\nThe allocator never silently removes essential instructions or exceeds the configured budget. Results report actual token counts and distinguish truncation failures from model failures on fully included evidence.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 15,
+      "questionIds": [
+        "llms-context-budget",
+        "llms-context-order"
+      ]
+    },
+    {
+      "id": "lesson-llms-tool-output-contracts",
+      "moduleId": "llms-4",
+      "kind": "workshop",
+      "title": "Structured outputs and tools need external validation",
+      "summary": "Separate syntactic validity from semantic correctness",
+      "objectives": [
+        "Separate syntactic validity from semantic correctness.",
+        "Bound the authority of generated tool requests."
+      ],
+      "body": "## Core idea\n\nA model can generate a structured request, but an application must validate its schema, arguments, permissions, and state-dependent constraints before execution. Constrained formatting can improve syntax without proving a requested operation is correct. Retrieved documents and tool outputs are data, not authority to replace application instructions. Design an explicit boundary between proposing and performing an action.\n\n## Worked example\n\nA generated transfer request with valid JSON can still contain the wrong account, an invalid amount, or an unauthorized action. Schema checks establish shape; application rules establish whether the operation is allowed and meaningful.\n\n## Try it\n\nDefine a read-only lookup tool with a narrow schema, size limits, authorization checks, and a structured error response. Add malformed, out-of-range, and instruction-like tool output cases.\n\n## Check your work\n\nThe application validates every request and does not execute arbitrary text. Evaluation distinguishes parse success, valid arguments, correct task completion, and appropriate handling of untrusted retrieved instructions.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 25,
+      "questionIds": [
+        "llms-prompt-injection",
+        "llms-structured-output"
+      ]
+    },
+    {
+      "id": "lesson-llms-long-context",
+      "title": "A bigger context window is not a free resize",
+      "summary": "RoPE · Long context · Evaluation",
+      "body": "## The problem to understand\n\nYou want to extend a decoder model trained on 8k-token sequences to handle 64k. Explain why changing a maximum-length configuration field is insufficient. Discuss positional representation, attention cost, KV memory, training/adaptation data, retrieval alternatives, and an evaluation that tests useful long-range reasoning instead of only a single needle-in-a-haystack case.\n\n## The mental model\n\nA larger allocation limit does not ensure the model’s positional scheme or learned behavior generalizes beyond its training range. RoPE scaling/interpolation variants change positional relationships and need model-specific validation; learned absolute embeddings have different constraints. Longer dense attention also increases compute, while decode KV storage grows with the retained sequence length.\n\nEvaluate adaptation data, positional scaling, attention implementation, and serving budgets together. Test multi-hop synthesis, conflicting distant evidence, position sensitivity, distractors, and tasks requiring several remote spans. Measure short-context regressions as well as long-context accuracy, latency, and memory. A single easily localized needle is useful but incomplete. Compare retrieval, compression, or chunked workflows where full-context access is unnecessary. State the actual usable context under the workload rather than equating a configured limit with reliable reasoning capacity.\n\n## Check your understanding\n\n- Address positional generalization beyond a configuration change.\n- Model attention compute and KV memory growth.\n- Discuss adaptation and retrieval/compression alternatives.\n- Evaluate multi-span reasoning, distractors, position effects, and short-context regressions.\n\n## Think one step further\n\nHow would you separate a positional failure from retrieval failure caused by distracting context?\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)",
+      "minutes": 10,
+      "questionIds": [
+        "llms-long-context"
+      ],
+      "moduleId": "llms-4",
+      "kind": "workshop",
+      "objectives": [
+        "Address positional generalization beyond a configuration change.",
+        "Model attention compute and KV memory growth."
+      ]
+    },
+    {
+      "id": "lesson-llms-model-evaluation-capstone",
+      "moduleId": "llms-4",
+      "kind": "capstone",
+      "title": "Capstone: a grounded-answer evaluation study",
+      "summary": "Integrate token budgeting, retrieval, generation, and evaluation",
+      "objectives": [
+        "Integrate token budgeting, retrieval, generation, and evaluation.",
+        "Report improvements with reproducible evidence and limitations."
+      ],
+      "body": "## Core idea\n\nBuild a small grounded-answer workflow over a fixed synthetic or public document set. Start with a plain prompting baseline, add one intervention, and keep held-out cases untouched until the comparison. Document model, tokenizer, template, retrieval settings, decoding settings, and data revisions. An offline supplied-output evaluation is acceptable when a local model is unavailable.\n\n## Worked example\n\nInclude answerable questions, missing evidence, conflicting passages, long distractors, and text that tries to redirect the workflow. Score factual support, completeness, abstention, formatting, and token usage separately.\n\n## Try it\n\nDeliver the dataset, rubric, per-case results, error taxonomy, and a short decision about whether the intervention helps. Include several manually audited successes and failures and any evaluator disagreement.\n\n## Check your work\n\nAcceptance requires a reproducible baseline, separated development and held-out data, evidence-backed claims, and explicit limitations. Marking the course complete records your review; it does not certify model reliability.\n\n## Primary reading\n\n- [Attention Is All You Need](https://arxiv.org/abs/1706.03762)\n- [Transformers causal language modeling](https://huggingface.co/docs/transformers/tasks/language_modeling)",
+      "minutes": 60,
+      "questionIds": [
+        "llms-rag",
+        "llms-retrieval-ablation",
+        "llms-model-migration"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Use basic probability, logarithms, and matrix multiplication.",
+    "Read Python-like pseudocode and distinguish training from inference."
+  ],
+  "outcomes": [
+    "Trace text through tokenization, embeddings, attention, and next-token prediction.",
+    "Construct a causal training objective without label or evaluation leakage.",
+    "Compare prompting, retrieval, and fine-tuning using explicit hypotheses.",
+    "Build a reproducible evaluation with held-out data and documented limitations."
+  ],
+  "modules": [
+    {
+      "id": "llms-1",
+      "title": "Tokens and prediction",
+      "description": "Establish representation, attention, and causal language modeling.",
+      "level": "Foundation"
+    },
+    {
+      "id": "llms-2",
+      "title": "Training and tensor reasoning",
+      "description": "Track dimensions, losses, masks, and optimization.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "llms-3",
+      "title": "Adaptation and evaluation",
+      "description": "Compare retrieval, prompting, and fine-tuning on measurable tasks.",
+      "level": "Advanced"
+    },
+    {
+      "id": "llms-4",
+      "title": "Reliable model workflows",
+      "description": "Manage context, tool boundaries, and evaluation evidence.",
+      "level": "Expert"
+    }
+  ]
+}

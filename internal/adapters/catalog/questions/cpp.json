@@ -1,0 +1,990 @@
+[
+  {
+    "id": "cpp-view",
+    "topic": "cpp",
+    "title": "A view outlives its owner",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Object lifetime",
+      "string_view"
+    ],
+    "prompt": "A function returns a `std::string_view` into a local string. What is the strongest correct statement about the caller’s read? Assume C++20. The fact that this example might print the expected bytes on your machine is not a guarantee.",
+    "solution": "The local string is destroyed at function exit, so the returned view does not designate a live character sequence. Reading through it has undefined behavior. `std::string_view` is a non-owning pointer-and-length abstraction; it does not extend the owner’s lifetime.\n\nReturn `std::string` to transfer an owned result, or return a view only into storage with a documented lifetime that exceeds every use. Small-string optimization does not rescue the local object’s lifetime; it can simply change where the invalid storage was located.",
+    "rubric": [
+      "Identify string_view as non-owning.",
+      "Locate destruction of the local string.",
+      "Choose an owned result or a valid external lifetime."
+    ],
+    "hints": [
+      "Does string_view participate in reference counting?",
+      "Expected output in one execution does not establish a valid object lifetime."
+    ],
+    "followUp": "Is returning a view into a string parameter safe when the caller passes a temporary?",
+    "references": [
+      {
+        "title": "C++ working draft",
+        "url": "https://eel.is/c++draft/"
+      }
+    ],
+    "code": "std::string_view label() {\n    std::string text = \"market-data\";\n    return text;\n}\nauto v = label();\nstd::cout << v;",
+    "language": "cpp",
+    "options": [
+      "The view copies the bytes, so the read is safe.",
+      "Return value optimization extends text’s lifetime.",
+      "The read has undefined behavior because the owner was destroyed.",
+      "The read is safe when the string fits in small-string storage."
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "cpp-virtual-destructor",
+    "topic": "cpp",
+    "title": "Deleting through the wrong contract",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 7,
+    "tags": [
+      "RAII",
+      "Polymorphism"
+    ],
+    "prompt": "The program manages a derived object through `std::unique_ptr<Base>`. Explain the lifetime defect, why using a smart pointer does not fix it, and two valid base-class designs depending on whether deletion through the base should be supported.",
+    "solution": "The default deleter invokes `delete` on a `Base*`. In this ordinary hierarchy, deleting a derived object through a base pointer without a virtual destructor has undefined behavior. Ownership management and correct polymorphic destruction are separate requirements.\n\nIf polymorphic deletion is part of the API, give Base a public virtual destructor, usually `virtual ~Base() = default;`. If deletion through Base should be forbidden, a protected non-virtual destructor can enforce that contract, with ownership retained through a suitable concrete type or deliberate custom deleter. A virtual method elsewhere in the class does not make the destructor virtual.",
+    "rubric": [
+      "Identify deletion through Base* as the problematic operation.",
+      "Explain the limitation of unique_ptr’s default deleter.",
+      "Offer public virtual or protected non-virtual destructor designs with appropriate ownership."
+    ],
+    "hints": [
+      "Which static pointer type does default_delete receive?",
+      "Virtual dispatch applies to individual virtual functions, including destructors only when declared virtual."
+    ],
+    "followUp": "Why can shared_ptr<Base> constructed directly from make_shared<Derived>() behave differently?",
+    "references": [
+      {
+        "title": "C++ working draft",
+        "url": "https://eel.is/c++draft/"
+      }
+    ],
+    "code": "struct Base {\n    virtual void run() = 0;\n    ~Base() = default;\n};\nstruct Derived : Base {\n    std::vector<int> data;\n    void run() override {}\n};\nstd::unique_ptr<Base> p = std::make_unique<Derived>();",
+    "language": "cpp"
+  },
+  {
+    "id": "cpp-invalidation",
+    "topic": "cpp",
+    "title": "The iterator that survived until it did not",
+    "difficulty": "Intermediate",
+    "format": "code",
+    "minutes": 10,
+    "tags": [
+      "Containers",
+      "Invalidation"
+    ],
+    "prompt": "Repair this loop so that every original even element is duplicated exactly once at the end of the vector. The implementation must be correct for any initial capacity. Explain why reserving more capacity is not, by itself, a complete repair for a range-for loop.",
+    "solution": "Record the original size, iterate by index only up to that size, and copy the current value before any push: `const auto n = v.size(); for (size_t i=0; i<n; ++i) { auto x=v[i]; if(x%2==0) v.push_back(x); }`. No reference or iterator is retained across a potential reallocation, and newly appended elements are excluded.\n\nReallocation invalidates all element iterators and references. Even without reallocation, push_back invalidates the old past-the-end iterator. A range-for typically captures both begin and end before iteration, so making capacity large enough does not preserve that cached end iterator. A two-pass collection into a second vector is also valid.",
+    "rubric": [
+      "Restrict traversal to the original size.",
+      "Avoid retaining a reference across push_back.",
+      "Explain both reallocation and past-the-end invalidation."
+    ],
+    "hints": [
+      "Range-for stores traversal state before entering the body.",
+      "An integer index can be used to reacquire an element after reallocation."
+    ],
+    "followUp": "What exception-safety guarantee does the repaired function offer if an allocation fails halfway through?",
+    "references": [
+      {
+        "title": "C++ working draft",
+        "url": "https://eel.is/c++draft/"
+      }
+    ],
+    "code": "#include <iostream>\n#include <vector>\n\nvoid duplicate_evens(std::vector<int>& v) {\n    // Repair the original loop. Duplicate only the original even elements.\n    for (const auto& x : v) {\n        if (x % 2 == 0) v.push_back(x);\n    }\n}\n\nint main() {\n    std::vector<int> v = {1, 2, 3, 4};\n    duplicate_evens(v);\n    for (int x : v) std::cout << x << ' ';\n    std::cout << '\\n';\n}\n",
+    "language": "cpp",
+    "tests": "#define main exercise_main\n#include \"main.cpp\"\n#undef main\n#include <cassert>\n\nint main() {\n    auto check = [](std::vector<int> input, std::vector<int> expected) {\n        input.shrink_to_fit();\n        duplicate_evens(input);\n        assert(input == expected);\n    };\n    check({}, {});\n    check({1, 3, 5}, {1, 3, 5});\n    check({1, 2, 3, 4}, {1, 2, 3, 4, 2, 4});\n    check({0, -2, 2}, {0, -2, 2, 0, -2, 2});\n    std::vector<int> reserved = {2, 4};\n    reserved.reserve(100);\n    duplicate_evens(reserved);\n    assert((reserved == std::vector<int>{2, 4, 2, 4}));\n    std::cout << \"All 5 example cases passed\\n\";\n}\n"
+  },
+  {
+    "id": "cpp-publish",
+    "topic": "cpp",
+    "title": "The flag that protects nothing else",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 10,
+    "tags": [
+      "Memory model",
+      "Atomics"
+    ],
+    "prompt": "A producer writes an ordinary payload, then sets `ready`. A consumer spins until ready is true and reads the payload. There is one producer, one consumer, one publication, and the payload remains alive. Explain why the shown relaxed protocol is invalid, and provide the minimum straightforward ordering repair. Describe exactly which load must observe which store.",
+    "solution": "Atomicity of the flag does not establish ordering for the non-atomic payload. With relaxed operations there is no synchronizes-with edge between the threads, so the conflicting payload accesses are not ordered by happens-before and the program has a data race.\n\nUse a release store to ready after initialization and an acquire load in the successful consumer check. When that acquire reads the value from the release store, initialization happens before the payload read. The failed polling loads need not themselves establish publication. This proof assumes the payload is not concurrently overwritten and remains alive. Seq_cst also works, but adds an ordering requirement that the one-shot protocol does not need.",
+    "rubric": [
+      "Separate the atomic flag from the non-atomic payload accesses.",
+      "Use a release store and an acquire observation of it.",
+      "State the one-shot, lifetime, and no-overwrite assumptions."
+    ],
+    "hints": [
+      "A data race is defined by the language memory model, not by whether loads look atomic in assembly.",
+      "Find the missing synchronizes-with edge."
+    ],
+    "followUp": "Can the consumer safely reset ready with Relaxed and let the producer overwrite payload?",
+    "references": [
+      {
+        "title": "C++ working draft · data races",
+        "url": "https://eel.is/c++draft/intro.races"
+      }
+    ],
+    "code": "// producer\npayload = 42;\nready.store(true, std::memory_order_relaxed);\n\n// consumer\nwhile (!ready.load(std::memory_order_relaxed)) {}\nuse(payload);",
+    "language": "cpp"
+  },
+  {
+    "id": "cpp-false-sharing",
+    "topic": "cpp",
+    "title": "Correct atomics, terrible scaling",
+    "difficulty": "Advanced",
+    "format": "multi_select",
+    "minutes": 9,
+    "tags": [
+      "Cache coherence",
+      "False sharing"
+    ],
+    "prompt": "Two threads repeatedly increment two different `std::atomic<uint64_t>` counters located next to each other. Throughput drops when the threads run on different cores. Assume the counters share a coherence line. Which interventions or claims are valid? Select all that apply.",
+    "solution": "Independent atomic variables can still share a coherence line. Each core’s write requires ownership of that line, creating coherence traffic even though the program has no data race. Separating the hot counters onto distinct target-appropriate cache lines can reduce that traffic. Thread-local accumulation with occasional aggregation can reduce it further when delayed visibility is acceptable.\n\nRelaxed ordering may reduce ordering constraints but does not eliminate the need for exclusive line ownership on writes. A fixed padding size is a platform assumption, not a universal property. Measure on the intended hardware and consider object alignment and array layout as well as field spacing.",
+    "rubric": [
+      "Distinguish false sharing from a data race.",
+      "Recognize padding/alignment and local aggregation as possible repairs.",
+      "Explain why Relaxed alone does not remove coherence ownership traffic."
+    ],
+    "hints": [
+      "The coherence unit is larger than a uint64_t.",
+      "Atomic ordering and cache-line ownership solve different problems."
+    ],
+    "followUp": "Why might padding every object make an entirely different workload slower?",
+    "references": [
+      {
+        "title": "C++ working draft",
+        "url": "https://eel.is/c++draft/"
+      }
+    ],
+    "options": [
+      "This must be a C++ data race.",
+      "Place hot counters on separate, appropriately aligned coherence lines.",
+      "Use thread-local counts and periodically aggregate when semantics permit.",
+      "Relaxed ordering guarantees zero cross-core coherence traffic."
+    ],
+    "correct": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "cpp-reclamation",
+    "topic": "cpp",
+    "title": "Removing a node is the easy part",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 22,
+    "tags": [
+      "Lock-free",
+      "ABA",
+      "Reclamation"
+    ],
+    "prompt": "A lock-free stack uses an atomic head pointer. A popper reads head and its next pointer, then performs compare_exchange. Another thread can remove and free the first node during that interval. Explain both the use-after-free and ABA hazards. Compare hazard pointers and epoch-based reclamation, including what happens when a participating thread stalls.",
+    "solution": "A successful pointer CAS only validates the head value at that instant; it does not prove that a node dereferenced earlier remained alive. A node can be freed before its next field is read. Allocator reuse can also restore the same address, making a pointer-only CAS miss intervening changes: ABA.\n\nHazard pointers publish protected nodes, then require readers to revalidate the source pointer before dereferencing. Removed nodes are retired and reclaimed only when no hazard protects them. A stalled thread can pin its protected nodes. Epoch schemes defer reclamation until all relevant readers have passed a quiescent state; a stalled participant can prevent reclamation of an unbounded stream of retired nodes. Tagged pointers mitigate some ABA cases but do not alone make dereferencing freed memory safe. Include shutdown, registration, memory bounds, and allocator behavior in the design.",
+    "rubric": [
+      "Show how dereference can race with reclamation before CAS.",
+      "Distinguish ABA from object-lifetime safety.",
+      "Describe hazard publication plus revalidation and epoch quiescence.",
+      "Compare stalled-reader retention and operational complexity."
+    ],
+    "hints": [
+      "CAS does not retroactively protect the earlier load of node->next.",
+      "A pointer value can be identical while the object at that address has changed."
+    ],
+    "followUp": "What progress guarantee does the full stack offer once its allocator and reclamation mechanism are included?",
+    "references": [
+      {
+        "title": "C++ working draft",
+        "url": "https://eel.is/c++draft/"
+      }
+    ]
+  },
+  {
+    "id": "cpp-raii-exit",
+    "topic": "cpp",
+    "title": "A destructor closes every exit path",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "RAII",
+      "Exceptions"
+    ],
+    "prompt": "A function opens a file, then may return early or throw. Explain how an RAII owner prevents resource leaks and what ownership rule its type should enforce.",
+    "solution": "Bind the file handle to an object whose destructor closes it. Normal scope exit and exception unwinding destroy that object. Disable copying or define deliberate shared ownership so two objects do not close the same handle; moving can transfer exclusive ownership.",
+    "hints": [
+      "Destructors run during stack unwinding.",
+      "Two owners cannot independently close one handle."
+    ],
+    "rubric": [
+      "Tie lifetime to scope.",
+      "Cover return and exception paths.",
+      "Define copying and moving ownership."
+    ],
+    "followUp": "Why should a resource-owning destructor avoid throwing?",
+    "references": [
+      {
+        "title": "C++ working draft · class.dtor",
+        "url": "https://eel.is/c++draft/class.dtor"
+      }
+    ]
+  },
+  {
+    "id": "cpp-unique-move",
+    "topic": "cpp",
+    "title": "One allocation has one owner",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "unique_ptr",
+      "Move semantics"
+    ],
+    "prompt": "After `auto b = std::move(a);` for a non-null std::unique_ptr<int>, what is guaranteed about a?",
+    "solution": "The unique_ptr move transfers ownership to b and leaves a null. Destruction of a is harmless; b now owns deletion. This explicit postcondition is stronger than the generic rule that many moved-from library objects are merely valid but unspecified.",
+    "hints": [
+      "Use unique_ptr's specified move contract.",
+      "Do not generalize this state to every moved-from type."
+    ],
+    "rubric": [
+      "Identify ownership transfer.",
+      "State that a becomes null.",
+      "Distinguish type-specific and generic move guarantees."
+    ],
+    "followUp": "When would shared_ptr express a different ownership requirement?",
+    "references": [
+      {
+        "title": "C++ working draft · unique.ptr",
+        "url": "https://eel.is/c++draft/unique.ptr"
+      }
+    ],
+    "options": [
+      "a still owns the integer",
+      "a is null",
+      "a is an invalid object",
+      "The integer is copied"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "cpp-const-pointer",
+    "topic": "cpp",
+    "title": "Which part is const?",
+    "difficulty": "Foundation",
+    "format": "multi_select",
+    "minutes": 5,
+    "tags": [
+      "Const",
+      "Pointers"
+    ],
+    "prompt": "Select declarations that prevent modifying an int through p, while allowing p itself to point elsewhere.",
+    "solution": "`const int* p` and `int const* p` both make the pointed-to integer const through that pointer. `int* const p` fixes the pointer instead. Const access does not guarantee another alias cannot modify the underlying non-const object.",
+    "hints": [
+      "Read const relative to the asterisk.",
+      "Separate pointer reassignment from pointee mutation."
+    ],
+    "rubric": [
+      "Identify the two equivalent forms.",
+      "Distinguish a const pointer.",
+      "Avoid claiming global immutability."
+    ],
+    "followUp": "What does const int* const p restrict?",
+    "references": [
+      {
+        "title": "C++ working draft · dcl.type.cv",
+        "url": "https://eel.is/c++draft/dcl.type.cv"
+      }
+    ],
+    "options": [
+      "const int* p",
+      "int* const p",
+      "int const* p",
+      "int* p"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "cpp-signed-overflow",
+    "topic": "cpp",
+    "title": "Wrapping is not a signed contract",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Integers",
+      "Undefined behavior"
+    ],
+    "prompt": "For a C++ int at its maximum representable value, what does evaluating `x + 1` guarantee?",
+    "solution": "Signed integer overflow has undefined behavior. It is not guaranteed to wrap even on hardware with two's-complement arithmetic. Check bounds before addition or use a suitably defined arithmetic representation; unsigned arithmetic wraps modulo its range but may still violate application intent.",
+    "hints": [
+      "Language rules differ from machine instructions.",
+      "Signed and unsigned overflow have different contracts."
+    ],
+    "rubric": [
+      "Identify undefined behavior.",
+      "Reject guaranteed wrapping.",
+      "Give a checked alternative."
+    ],
+    "followUp": "Why can a compiler remove an overflow test placed after the overflowing addition?",
+    "references": [
+      {
+        "title": "C++ working draft · expr.pre",
+        "url": "https://eel.is/c++draft/expr.pre"
+      }
+    ],
+    "options": [
+      "It always becomes the minimum int",
+      "It always throws",
+      "It has undefined behavior",
+      "It saturates"
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "cpp-span-owner",
+    "topic": "cpp",
+    "title": "A span does not extend storage lifetime",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "span",
+      "Lifetimes"
+    ],
+    "prompt": "A function returns std::span<const int> over a local std::vector<int>. Explain why the return is invalid and give two viable API shapes.",
+    "solution": "span is a non-owning view. The local vector is destroyed on return, leaving the span dangling. Return an owning vector, or accept storage from the caller and return a view whose lifetime remains within that storage's lifetime.",
+    "hints": [
+      "The view stores access, not ownership.",
+      "Find which object releases the allocation."
+    ],
+    "rubric": [
+      "Identify destroyed storage.",
+      "Return an owner or borrow caller storage.",
+      "State the view's lifetime requirement."
+    ],
+    "followUp": "Does making the span const repair the lifetime?",
+    "references": [
+      {
+        "title": "C++ working draft · views.span",
+        "url": "https://eel.is/c++draft/views.span"
+      }
+    ]
+  },
+  {
+    "id": "cpp-sizeof-array",
+    "topic": "cpp",
+    "title": "Array extent belongs to the type",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Arrays",
+      "Sizeof"
+    ],
+    "prompt": "Assume sizeof(int)==4. For a local `int values[7]`, what is sizeof(values), in bytes?",
+    "solution": "28. Here sizeof sees the actual array type, so it includes all seven integers. A function parameter written as int values[] is adjusted to a pointer; sizeof that parameter reports pointer size instead.",
+    "hints": [
+      "Multiply element count by element size.",
+      "An array parameter is adjusted to a pointer."
+    ],
+    "rubric": [
+      "Compute 7×4.",
+      "Distinguish array from pointer.",
+      "Explain parameter adjustment."
+    ],
+    "followUp": "How does accepting a reference to an array preserve its extent?",
+    "references": [
+      {
+        "title": "C++ working draft · expr.sizeof",
+        "url": "https://eel.is/c++draft/expr.sizeof"
+      }
+    ],
+    "expected": "28"
+  },
+  {
+    "id": "cpp-move-cast",
+    "topic": "cpp",
+    "title": "std::move does not move by itself",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Move semantics",
+      "Value categories"
+    ],
+    "prompt": "Explain what std::move does and why `std::move(const_string)` can still invoke a string copy constructor.",
+    "solution": "std::move casts its argument to an rvalue reference while preserving const qualification. It does not transfer resources itself. A normal string move constructor needs a non-const rvalue, so a const string may bind to the copy constructor instead.",
+    "hints": [
+      "A cast changes overload eligibility.",
+      "Const prevents ordinary destructive transfer."
+    ],
+    "rubric": [
+      "Describe the cast.",
+      "Preserve const qualification.",
+      "Explain constructor overload selection."
+    ],
+    "followUp": "Why can moving a small scalar offer no performance benefit?",
+    "references": [
+      {
+        "title": "C++ working draft · forward",
+        "url": "https://eel.is/c++draft/forward"
+      }
+    ]
+  },
+  {
+    "id": "cpp-vector-reserve",
+    "topic": "cpp",
+    "title": "Reserved storage is not constructed elements",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Vector",
+      "Capacity"
+    ],
+    "prompt": "Why is `std::vector<int> v; v.reserve(10); v[0]=42;` invalid, and what operations make the first element exist?",
+    "solution": "reserve changes capacity without increasing size or constructing ten elements. Index zero is outside the vector's element range. Use push_back, emplace_back, or resize before indexed assignment; available raw storage is not permission to address nonexistent vector elements.",
+    "hints": [
+      "Compare size() with capacity().",
+      "operator[] requires an existing element."
+    ],
+    "rubric": [
+      "Identify size zero.",
+      "Distinguish allocation from construction.",
+      "Provide a valid insertion or resize."
+    ],
+    "followUp": "When would reserve reduce allocations during repeated push_back calls?",
+    "references": [
+      {
+        "title": "C++ working draft · vector.capacity",
+        "url": "https://eel.is/c++draft/vector.capacity"
+      }
+    ]
+  },
+  {
+    "id": "cpp-initializer-list",
+    "topic": "cpp",
+    "title": "Braces reject a narrowing conversion",
+    "difficulty": "Intermediate",
+    "format": "choice",
+    "minutes": 8,
+    "tags": [
+      "Initialization",
+      "Narrowing"
+    ],
+    "prompt": "For `double d=3.7;`, which declaration is ill-formed because list initialization rejects this narrowing conversion?",
+    "solution": "`int x{d};` is ill-formed. Ordinary `int x = d;` permits a floating-to-integer conversion that discards the fractional part when the value is representable. Braces catch this class of narrowing rather than silently choosing a rounding policy.",
+    "hints": [
+      "Compare list initialization with copy initialization.",
+      "This is a floating-to-integer conversion."
+    ],
+    "rubric": [
+      "Choose brace initialization.",
+      "Explain narrowing rejection.",
+      "Distinguish truncation from rounding."
+    ],
+    "followUp": "Does an explicit cast communicate or eliminate possible precision loss?",
+    "references": [
+      {
+        "title": "C++ working draft · dcl.init.list",
+        "url": "https://eel.is/c++draft/dcl.init.list"
+      }
+    ],
+    "options": [
+      "double x{d};",
+      "int x{d};",
+      "double x = d;",
+      "const double x=d;"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "cpp-shared-cycle",
+    "topic": "cpp",
+    "title": "Reference counts cannot collect a cycle",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "shared_ptr",
+      "weak_ptr"
+    ],
+    "prompt": "Two objects own shared_ptr references to each other. Their external owners disappear, but destructors never run. Explain the leak and how to choose a weak edge.",
+    "solution": "Each object's strong count remains positive because the other owns it. Break a non-owning back-reference with weak_ptr and lock it before use, handling expiry. Choose ownership from the domain relationship; replacing every edge with weak pointers would leave no owner keeping the graph alive.",
+    "hints": [
+      "Count strong owners after external release.",
+      "A back-reference may observe without owning."
+    ],
+    "rubric": [
+      "Trace the reference cycle.",
+      "Introduce a deliberate weak edge.",
+      "Handle lock failure and retain a real owner."
+    ],
+    "followUp": "Why is checking expired before dereferencing weaker than using lock's result?",
+    "references": [
+      {
+        "title": "C++ working draft · util.smartptr.weak",
+        "url": "https://eel.is/c++draft/util.smartptr.weak"
+      }
+    ]
+  },
+  {
+    "id": "cpp-rule-zero",
+    "topic": "cpp",
+    "title": "Members can own the cleanup",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Rule of zero",
+      "Ownership"
+    ],
+    "prompt": "Design a class containing a string and a file resource. How can it avoid hand-written copy, move, and destructor code while retaining safe ownership?",
+    "solution": "Use standard value members and a dedicated RAII file-handle type with the desired ownership semantics. Let generated special members compose those contracts. If the file member is move-only, the containing class naturally becomes noncopyable while supporting appropriate moves; avoid duplicating raw-handle cleanup logic.",
+    "hints": [
+      "Ownership can be delegated to member types.",
+      "Generated operations follow member capabilities."
+    ],
+    "rubric": [
+      "Use RAII members.",
+      "Compose copy and move behavior deliberately.",
+      "Avoid duplicate manual cleanup."
+    ],
+    "followUp": "When would an explicitly user-defined invariant require custom move behavior?",
+    "references": [
+      {
+        "title": "C++ working draft · class.copy",
+        "url": "https://eel.is/c++draft/class.copy"
+      }
+    ]
+  },
+  {
+    "id": "cpp-lambda-lifetime",
+    "topic": "cpp",
+    "title": "A callback outlives its captured reference",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Lambdas",
+      "Callbacks"
+    ],
+    "prompt": "A function registers an asynchronous callback capturing a local string by reference, then returns. Explain the bug and compare capture by value with capturing shared ownership.",
+    "solution": "The callback retains a reference to a destroyed local, so later access is invalid. Capture an owned string by value when a snapshot is sufficient. Capture a shared_ptr only when shared lifetime is intended, accounting for cycles and synchronization if the target can mutate.",
+    "hints": [
+      "The callback may run after the stack frame ends.",
+      "Lifetime and thread safety are separate."
+    ],
+    "rubric": [
+      "Identify the dangling capture.",
+      "Provide owned capture.",
+      "Discuss shared ownership and synchronization."
+    ],
+    "followUp": "How could a weak_ptr capture allow callback cancellation when its owner disappears?",
+    "references": [
+      {
+        "title": "C++ working draft · expr.prim.lambda.capture",
+        "url": "https://eel.is/c++draft/expr.prim.lambda.capture"
+      }
+    ]
+  },
+  {
+    "id": "cpp-unordered-rehash",
+    "topic": "cpp",
+    "title": "An iterator and a reference have different fates",
+    "difficulty": "Intermediate",
+    "format": "multi_select",
+    "minutes": 8,
+    "tags": [
+      "Unordered containers",
+      "Invalidation"
+    ],
+    "prompt": "For std::unordered_map, which statements about rehash are correct?",
+    "solution": "Rehash invalidates iterators but does not invalidate references or pointers to existing elements. Erasing an element invalidates access to that element. Do not infer iterator validity from a node's stable address; iteration includes bucket traversal state.",
+    "hints": [
+      "Separate node addresses from traversal state.",
+      "Erasure differs from bucket rearrangement."
+    ],
+    "rubric": [
+      "Identify iterator invalidation.",
+      "Preserve existing element references on rehash.",
+      "Distinguish erasure."
+    ],
+    "followUp": "How does reserve help when a loop would otherwise trigger rehash?",
+    "references": [
+      {
+        "title": "C++ working draft · unord.req",
+        "url": "https://eel.is/c++draft/unord.req"
+      }
+    ],
+    "options": [
+      "Rehash preserves all iterators",
+      "Rehash invalidates iterators",
+      "Rehash preserves references to existing elements",
+      "Erasing an element keeps its references valid"
+    ],
+    "correct": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "cpp-virtual-default",
+    "topic": "cpp",
+    "title": "A default argument is chosen statically",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Virtual functions",
+      "Default arguments"
+    ],
+    "prompt": "Base declares virtual f(int x=1); Derived overrides f(int x=2). Given Base* p pointing to Derived, what does p->f() do?",
+    "solution": "The call uses Base's default argument, 1, because defaults are selected from the static declaration. Virtual dispatch then invokes Derived::f with that value. Avoid differing defaults on overrides, or use a nonvirtual wrapper to define one consistent call contract.",
+    "hints": [
+      "Default substitution happens before virtual dispatch.",
+      "Static and dynamic types answer different questions."
+    ],
+    "rubric": [
+      "Choose argument 1.",
+      "Dispatch to Derived::f.",
+      "Explain the two selection mechanisms."
+    ],
+    "followUp": "What changes when the expression has static type Derived*?",
+    "references": [
+      {
+        "title": "C++ working draft · dcl.fct.default",
+        "url": "https://eel.is/c++draft/dcl.fct.default"
+      }
+    ]
+  },
+  {
+    "id": "cpp-exception-guarantee",
+    "topic": "cpp",
+    "title": "Build the replacement before committing it",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Exceptions",
+      "Strong guarantee"
+    ],
+    "prompt": "Design an update of a vector-backed index that promises the strong exception guarantee. A comparator or allocation may throw midway.",
+    "solution": "Construct the replacement in temporary owned storage without changing the published index. Once construction succeeds, commit using a non-throwing swap or equivalent operation whose allocator conditions are satisfied. Failure destroys the temporary and leaves the original logical state unchanged; include all correlated metadata in the same commit boundary.",
+    "hints": [
+      "Partial in-place edits are hard to roll back.",
+      "The commit operation must not fail."
+    ],
+    "rubric": [
+      "Stage changes independently.",
+      "Commit without throwing.",
+      "Include correlated state in the invariant."
+    ],
+    "followUp": "How does the basic exception guarantee differ?",
+    "references": [
+      {
+        "title": "C++ working draft · container.requirements.general",
+        "url": "https://eel.is/c++draft/container.requirements.general"
+      }
+    ]
+  },
+  {
+    "id": "cpp-noexcept-vector",
+    "topic": "cpp",
+    "title": "A potentially throwing move may cause copies",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "noexcept",
+      "Vector"
+    ],
+    "prompt": "Why might vector reallocation copy existing elements even when their type has a move constructor?",
+    "solution": "To preserve exception guarantees, vector may use copying when moving can throw and copying is available. A correctly declared non-throwing move can permit efficient relocation. Mark noexcept only when the implementation truly cannot throw; violating it terminates the program rather than delivering an ordinary exception.",
+    "hints": [
+      "Consider rollback after the third moved element throws.",
+      "noexcept is a promise with consequences."
+    ],
+    "rubric": [
+      "Relate copying to exception safety.",
+      "Explain non-throwing moves.",
+      "Avoid a false noexcept promise."
+    ],
+    "followUp": "What limitation arises for a move-only type whose move can throw?",
+    "references": [
+      {
+        "title": "C++ working draft · vector.modifiers",
+        "url": "https://eel.is/c++draft/vector.modifiers"
+      }
+    ]
+  },
+  {
+    "id": "cpp-relaxed-counter",
+    "topic": "cpp",
+    "title": "A statistic is not a publication flag",
+    "difficulty": "Advanced",
+    "format": "multi_select",
+    "minutes": 12,
+    "tags": [
+      "Atomics",
+      "Memory ordering"
+    ],
+    "prompt": "A relaxed atomic counter records completed requests. Which guarantees follow from relaxed operations on the counter alone?",
+    "solution": "The counter's accesses are atomic and participate in its modification order. They do not publish unrelated non-atomic request data to readers. Use a separate synchronization protocol when the count is also intended as evidence that another object's contents are ready.",
+    "hints": [
+      "Atomicity is narrower than cross-object ordering.",
+      "Consider what happens-before edge would publish data."
+    ],
+    "rubric": [
+      "Preserve atomic accesses.",
+      "Identify per-object modification order.",
+      "Reject unrelated data publication."
+    ],
+    "followUp": "When is relaxed ordering appropriate for approximate monitoring?",
+    "references": [
+      {
+        "title": "C++ working draft · atomics.order",
+        "url": "https://eel.is/c++draft/atomics.order"
+      }
+    ],
+    "options": [
+      "Individual counter updates are atomic",
+      "Unrelated writes become visible to every reader",
+      "Counter modifications have a modification order",
+      "A relaxed load acts as a mutex acquire"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "cpp-condition-predicate",
+    "topic": "cpp",
+    "title": "A notification is not remembered state",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Condition variables",
+      "Concurrency"
+    ],
+    "prompt": "A consumer calls cv.wait(lock) once, then removes a queue item. Sometimes the queue is empty. Repair both spurious wakeups and notifications arriving before the wait.",
+    "solution": "Guard the queue and shutdown predicate with the mutex and wait in a predicate loop, such as wait(lock, [&]{return stopped || !queue.empty();}). Recheck state while locked before removing an item. A notification is only a wakeup hint; persistent state is the queue and predicate, which also handles earlier notifications.",
+    "hints": [
+      "A wakeup does not imply work exists.",
+      "State survives even when no thread is waiting."
+    ],
+    "rubric": [
+      "Use a protected predicate.",
+      "Loop across spurious wakeups.",
+      "Handle stop without popping an empty queue."
+    ],
+    "followUp": "Why can changing the predicate without the mutex lose a wakeup?",
+    "references": [
+      {
+        "title": "C++ working draft · thread.condition",
+        "url": "https://eel.is/c++draft/thread.condition"
+      }
+    ]
+  },
+  {
+    "id": "cpp-object-lifetime",
+    "topic": "cpp",
+    "title": "Bytes alone do not establish every object",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Object lifetime",
+      "Alignment"
+    ],
+    "prompt": "A custom allocator returns enough bytes for an over-aligned type. Explain why size alone is insufficient before using that type through a pointer.",
+    "solution": "Storage must satisfy alignment, and the object's lifetime and initialization must be established through a permitted construction mechanism. Use an allocator supporting the required alignment and construct_at or appropriate construction. Destruction and deallocation must match the constructed objects and allocation contract.",
+    "hints": [
+      "An address can have enough bytes but wrong alignment.",
+      "Storage and a live initialized object differ."
+    ],
+    "rubric": [
+      "Check alignment.",
+      "Establish lifetime and initialization.",
+      "Match destruction and deallocation."
+    ],
+    "followUp": "How would an arena track which nontrivial destructors must run?",
+    "references": [
+      {
+        "title": "C++ working draft · basic.life",
+        "url": "https://eel.is/c++draft/basic.life"
+      }
+    ]
+  },
+  {
+    "id": "cpp-string-sso",
+    "topic": "cpp",
+    "title": "A moved string may not keep its old address",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Strings",
+      "Move semantics"
+    ],
+    "prompt": "Code saves a pointer into a std::string, moves the string, and assumes the saved pointer is always the destination's data pointer. Why is that assumption unsafe?",
+    "solution": "String implementations may use inline storage for short strings, and moving does not provide the assumed universal pointer-transfer contract. A saved pointer can still refer into the moved-from object's storage or otherwise become unusable. Obtain data() from the destination after the move and respect later invalidation.",
+    "hints": [
+      "Small strings may store bytes inside the object.",
+      "A move is not guaranteed to steal one heap pointer."
+    ],
+    "rubric": [
+      "Reject address-transfer assumptions.",
+      "Explain possible inline storage.",
+      "Refresh access from the destination."
+    ],
+    "followUp": "Why should foreign APIs not retain data() beyond a documented owner lifetime?",
+    "references": [
+      {
+        "title": "C++ working draft · string.require",
+        "url": "https://eel.is/c++draft/string.require"
+      }
+    ]
+  },
+  {
+    "id": "cpp-aba-stack",
+    "topic": "cpp",
+    "title": "The pointer returned to the same address",
+    "difficulty": "Expert",
+    "format": "explanation",
+    "minutes": 18,
+    "tags": [
+      "Lock-free",
+      "ABA"
+    ],
+    "prompt": "A lock-free stack compares only its head pointer. Another thread removes A and B, then puts A back before the comparison. Why can compare_exchange succeed incorrectly?",
+    "solution": "The pointer bits match despite a changed history, so the operation may install a stale next pointer or violate ownership assumptions. Memory reclamation and reuse are part of the algorithm. Tagged versions can detect some changes, while hazard pointers or epochs address safe reclamation; neither should be added without a complete protocol.",
+    "hints": [
+      "Equal addresses do not imply unchanged history.",
+      "A stale next pointer may reference removed storage."
+    ],
+    "rubric": [
+      "Trace A-B-A history.",
+      "Explain the stale update.",
+      "Include reuse and reclamation in the repair."
+    ],
+    "followUp": "What limitation does a finite version tag introduce?",
+    "references": [
+      {
+        "title": "C++ working draft · atomics.types.operations",
+        "url": "https://eel.is/c++draft/atomics.types.operations"
+      }
+    ]
+  },
+  {
+    "id": "cpp-seqlock-language",
+    "topic": "cpp",
+    "title": "Retrying cannot undo a C++ data race",
+    "difficulty": "Expert",
+    "format": "debug",
+    "minutes": 18,
+    "tags": [
+      "Memory model",
+      "Seqlocks"
+    ],
+    "prompt": "A C++ seqlock implementation reads ordinary fields concurrently with writes, then retries if a version changed. Why is retry alone insufficient for portable correctness?",
+    "solution": "The non-atomic conflicting accesses already constitute a data race and undefined behavior, even when the result is discarded. Use a design supported by the language memory model, such as properly atomic fields or immutable snapshot publication, and prove its ordering and lifetime rules. Kernel patterns may rely on different implementation contracts.",
+    "hints": [
+      "Validation happens after the potentially racing read.",
+      "Discarding a result does not erase its execution."
+    ],
+    "rubric": [
+      "Identify the data race.",
+      "Reject retry as a repair.",
+      "Propose a language-valid representation."
+    ],
+    "followUp": "What additional proof is needed when a snapshot contains pointers?",
+    "references": [
+      {
+        "title": "C++ working draft · intro.races",
+        "url": "https://eel.is/c++draft/intro.races"
+      }
+    ]
+  },
+  {
+    "id": "cpp-allocator-boundary",
+    "topic": "cpp",
+    "title": "Allocate here, release with the same contract",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "ABI",
+      "Allocators"
+    ],
+    "prompt": "Design a shared-library API returning a buffer across a C ABI boundary. Clients may use a different runtime allocator.",
+    "solution": "Return an opaque handle or explicit buffer descriptor with a matching exported release function. Document lifetime, size, thread use, and one-time ownership transfer. Catch exceptions before crossing the ABI boundary and return structured error status. Never require clients to guess delete, delete[], or free.",
+    "hints": [
+      "Allocation routines must match their release contract.",
+      "Exceptions and ownership both cross the boundary."
+    ],
+    "rubric": [
+      "Provide matching deallocation.",
+      "Specify buffer lifetime and ownership.",
+      "Keep exceptions within the library boundary."
+    ],
+    "followUp": "How could a caller-provided output buffer simplify ownership?",
+    "references": [
+      {
+        "title": "C++ working draft · c.malloc",
+        "url": "https://eel.is/c++draft/c.malloc"
+      }
+    ]
+  },
+  {
+    "id": "cpp-parallel-reduction",
+    "topic": "cpp",
+    "title": "A faster sum changes its answer",
+    "difficulty": "Expert",
+    "format": "explanation",
+    "minutes": 18,
+    "tags": [
+      "Floating point",
+      "Parallelism"
+    ],
+    "prompt": "A parallel floating-point reduction differs slightly from a serial sum. Explain why and propose a reproducibility policy for scientific output.",
+    "solution": "Floating-point addition is not associative, so changing grouping can change rounding. Define whether the requirement is bitwise reproducibility or an error tolerance. Use a fixed reduction tree or stronger summation method as appropriate, control relevant compiler and arithmetic settings, and test accuracy against a suitable reference.",
+    "hints": [
+      "Parallel tasks regroup additions.",
+      "Numerical closeness and bitwise equality are different requirements."
+    ],
+    "rubric": [
+      "Explain nonassociative rounding.",
+      "Define the reproducibility requirement.",
+      "Choose and validate a summation policy."
+    ],
+    "followUp": "Why can compensated summation improve accuracy without guaranteeing identical parallel results?",
+    "references": [
+      {
+        "title": "C++ working draft · algorithms.parallel.exec",
+        "url": "https://eel.is/c++draft/algorithms.parallel.exec"
+      }
+    ]
+  }
+]

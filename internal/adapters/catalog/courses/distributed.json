@@ -1,0 +1,314 @@
+{
+  "id": "distributed",
+  "topic": "distributed",
+  "title": "Distributed systems: guarantees under partial failure",
+  "description": "Reason about replicated state, clocks, consistency, consensus, retries, and ownership using explicit failure models and event histories.",
+  "lessons": [
+    {
+      "id": "lesson-distributed-failure-models",
+      "moduleId": "distributed-1",
+      "kind": "concept",
+      "title": "Safety, liveness, and partial failure",
+      "summary": "State what must never happen and what must eventually happen",
+      "objectives": [
+        "State what must never happen and what must eventually happen.",
+        "Explain why a timeout is not proof of a crash."
+      ],
+      "body": "## Core idea\n\nSafety rules out bad outcomes such as two committed owners for one resource under the protocol contract. Liveness describes progress under stated conditions. Networks can delay, duplicate, reorder, or drop messages, and processes can pause or crash. A timeout cannot distinguish all of these cases. State whether faults are crash-only or include malicious behavior, and which timing assumptions are needed for progress.\n\n## Worked example\n\nA worker missing a heartbeat may be dead, partitioned, or paused. Starting a replacement can restore progress but creates overlapping ownership unless the resource enforces a current-owner protocol.\n\n## Try it\n\nDefine safety and liveness for a replicated register. List behavior during a partition, a crash, and an indefinitely delayed message. State which failures your model excludes.\n\n## Check your work\n\nEach guarantee has assumptions. The design does not quietly promise bounded progress in a fully asynchronous model with arbitrary message delay.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-partial-failure",
+        "distributed-retry-budget"
+      ]
+    },
+    {
+      "id": "lesson-distributed-histories-consistency",
+      "moduleId": "distributed-1",
+      "kind": "concept",
+      "title": "Consistency guarantees are constraints on histories",
+      "summary": "Use operation intervals to reason about linearizability",
+      "objectives": [
+        "Use operation intervals to reason about linearizability.",
+        "Distinguish freshness from eventual convergence."
+      ],
+      "body": "## Core idea\n\nA history records invocations and responses. Linearizability requires an order consistent with each operation’s semantics and real-time precedence between non-overlapping operations. Other guarantees can permit observations that linearizability excludes. Eventual convergence describes behavior after updates and communication settle under suitable assumptions; it does not by itself bound staleness or provide read-your-writes.\n\n## Worked example\n\nIf write(7) returns before a later read begins, a linearizable single register without intervening writes cannot return its old value. If operations overlap, either order may be possible if it fits the complete history.\n\n## Try it\n\nDraw three read/write histories with overlapping operations. Decide whether each admits a legal linearization and mark the constraints imposed by completed writes.\n\n## Check your work\n\nA valid answer constructs a full legal order or identifies a contradiction. It does not declare every stale-looking concurrent read invalid without checking operation overlap.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-linearizable",
+        "distributed-eventual-contract",
+        "distributed-read-your-writes"
+      ]
+    },
+    {
+      "id": "lesson-distributed-logical-time",
+      "moduleId": "distributed-1",
+      "kind": "concept",
+      "title": "Physical clocks and logical causality",
+      "summary": "Distinguish wall-clock order from causal order",
+      "objectives": [
+        "Distinguish wall-clock order from causal order.",
+        "Use logical clocks with explicit comparison limits."
+      ],
+      "body": "## Core idea\n\nPhysical clocks have offset and drift. They help with timestamps and time-based policies but do not automatically establish causal order. Lamport clocks respect happens-before in one direction; a larger Lamport value does not prove causation. Vector clocks can represent more causal information at greater metadata cost. A timestamp-based conflict policy must explain tie breaking and clock assumptions.\n\n## Worked example\n\nTwo isolated writers can produce timestamps that disagree with real-time order if their clocks differ. Choosing the numerically later timestamp can discard an update without representing the user’s intended sequence.\n\n## Try it\n\nAssign Lamport timestamps to a three-process message trace. Identify causally ordered events and concurrent events, then explain what information the scalar clocks cannot recover.\n\n## Check your work\n\nEvery send/receive edge advances time correctly. The explanation avoids reversing the implication from happens-before to scalar-clock order.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-lamport-order",
+        "distributed-vector-concurrent"
+      ]
+    },
+    {
+      "id": "lesson-distributed-partition",
+      "title": "The partition forces a choice",
+      "summary": "Consistency · Availability · CAP",
+      "body": "## The problem to understand\n\nA replicated register is split into two network partitions. Clients can reach both sides. You require linearizable reads/writes and every request to a non-failed node to complete successfully without waiting for the partition to heal. Which statement is correct under an asynchronous partition model?\n\n## The mental model\n\nThose requirements cannot both be guaranteed during the partition. If both sides independently acknowledge conflicting writes and serve fresh linearizable reads, they cannot maintain one real-time-consistent register history without communication. Preserving linearizability requires some operations to wait or fail on a side that cannot safely coordinate.\n\nThis is a statement about behavior under partitions, not a rule that every system permanently chooses only two useful properties. Practical systems define consistency and availability contracts per operation and failure mode. Returning an error is operationally useful but does not satisfy the successful-response availability requirement stated here.\n\n## Check your understanding\n\n- Identify the incompatible requirements during a partition.\n- Relate linearizability to one real-time-consistent history.\n- Distinguish practical error handling from the stated availability definition.\n\n## Think one step further\n\nWhich operations could remain available if the application only requires commutative increments?\n\n## Primary reading\n\n- [Raft · extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 4,
+      "questionIds": [
+        "distributed-partition"
+      ],
+      "moduleId": "distributed-1",
+      "kind": "workshop",
+      "objectives": [
+        "Identify the incompatible requirements during a partition.",
+        "Relate linearizability to one real-time-consistent history."
+      ]
+    },
+    {
+      "id": "lesson-distributed-replication-models",
+      "moduleId": "distributed-2",
+      "kind": "concept",
+      "title": "Leader replication, logs, and applied state",
+      "summary": "Separate appended, committed, and applied entries",
+      "objectives": [
+        "Separate appended, committed, and applied entries.",
+        "Explain why replication alone is not a consensus protocol."
+      ],
+      "body": "## Core idea\n\nA leader can assign an order to log entries and replicate them, but safe leadership changes require rules about elections, prior entries, and commitment. Appending an entry on one server is different from committing it under the protocol, and applying it to a state machine is another step. Acknowledgement semantics should name which boundary has been reached.\n\n## Worked example\n\nA leader crashes after appending an entry locally but before obtaining the required replication. A replacement must not invent a guarantee that the uncommitted entry survived. Conversely, acknowledged committed state must remain represented under the protocol assumptions.\n\n## Try it\n\nTrace a three-node log through append, replication, commitment, application, and leader crash. Label when a client success response is allowed in your stated protocol.\n\n## Check your work\n\nThe trace uses one coherent consensus rule set rather than majority counting alone. It distinguishes persisted log state from in-memory application state and addresses recovery.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-replica-majority",
+        "distributed-replication-ack",
+        "distributed-snapshot-log"
+      ]
+    },
+    {
+      "id": "lesson-distributed-raft-walkthrough",
+      "moduleId": "distributed-2",
+      "kind": "concept",
+      "title": "Consensus needs election and commitment rules together",
+      "summary": "Explain the role of terms and election restrictions",
+      "objectives": [
+        "Explain the role of terms and election restrictions.",
+        "Trace a leader change without losing committed history."
+      ],
+      "body": "## Core idea\n\nRaft separates leader election, log replication, and safety. Terms identify election epochs; votes and log freshness rules limit who can lead. A majority is essential but not sufficient as a standalone description of every commitment case. Membership changes and durable metadata also matter. Study the complete protocol before adapting one attractive rule in isolation.\n\n## Worked example\n\nA candidate with a shorter, older log cannot simply win by being the first reachable server. Voters compare log freshness under Raft’s rules, preserving the possibility that a new leader contains committed history.\n\n## Try it\n\nWork through a paper trace with three servers, one leader crash, and one follower behind. Identify votes, terms, log matching, and the point each entry can be committed.\n\n## Check your work\n\nExplain each decision with the specific rule. Include the current-term commitment restriction and persisted vote/term information rather than assuming any replicated entry is immediately safe.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-raft-term",
+        "distributed-membership-joint",
+        "distributed-commit-current-term"
+      ]
+    },
+    {
+      "id": "lesson-distributed-intersection",
+      "title": "Where must two quorums meet?",
+      "summary": "Quorums · Replication",
+      "body": "## The problem to understand\n\nA fixed group has N=7 replicas. A write is acknowledged by W=4 distinct replicas. What is the smallest read quorum R that is guaranteed to intersect every such write quorum? Count only set intersection; do not assume that intersection alone proves linearizability.\n\n## The mental model\n\nRead and write sets must satisfy `R + W > N`. With W=4 and N=7, the smallest R is 4. A read set of size 3 can be disjoint from a particular write set of size 4; a set of size 4 cannot.\n\nIntersection is a combinatorial requirement, not a complete protocol. Correctness also depends on version selection, concurrent writes, partial writes, failure handling, membership changes, and repair. A system with sloppy quorums or dynamic replacement replicas may not preserve the assumed fixed-set intersection.\n\n## Check your understanding\n\n- Use the strict inequality R+W>N.\n- Find the smallest integer satisfying it.\n- Avoid claiming intersection alone proves linearizability.\n\n## Think one step further\n\nWhy does a read that contacts four replicas but returns the first response not implement a four-replica read quorum?\n\n## Primary reading\n\n- [Raft · extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 4,
+      "questionIds": [
+        "distributed-intersection",
+        "distributed-quorum-read-version"
+      ],
+      "moduleId": "distributed-2",
+      "kind": "workshop",
+      "objectives": [
+        "Use the strict inequality R+W>N.",
+        "Find the smallest integer satisfying it."
+      ]
+    },
+    {
+      "id": "lesson-distributed-lost-update",
+      "title": "Both writes succeeded. One update vanished.",
+      "summary": "Concurrency · Compare-and-swap",
+      "body": "## The problem to understand\n\nTwo clients read the same object `{version: 7, count: 10}` from a linearizable key-value store. Each computes count+1 and writes `{count: 11}`. Both writes succeed. Explain why linearizable individual operations do not make the read-modify-write sequence atomic. Provide two valid API-level repairs and describe the retry rule for one of them.\n\n## The mental model\n\nEach read and write can be individually linearizable while the multi-operation sequence interleaves. Both clients read 10 before either write, and the second write overwrites 11 with 11. The result reflects only one logical increment even though both write calls succeeded.\n\nUse an atomic increment operation, or a conditional write comparing the previously read version. With compare-and-swap, exactly one update based on version 7 succeeds; the other must reread the current version and recompute before retrying. Merely resending the stale value repeats the bug. A transaction that serializes the complete read-modify-write is another repair. Bound retries and distinguish a rejected condition from an ambiguous timeout after a successful commit.\n\n## Check your understanding\n\n- Distinguish operation linearizability from multi-operation atomicity.\n- Offer atomic increment and versioned conditional write/transaction.\n- Reread and recompute after a version conflict.\n\n## Think one step further\n\nWhat extra identity is needed if a client retries an atomic increment after an ambiguous timeout?\n\n## Primary reading\n\n- [Raft · extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 5,
+      "questionIds": [
+        "distributed-lost-update"
+      ],
+      "moduleId": "distributed-2",
+      "kind": "workshop",
+      "objectives": [
+        "Distinguish operation linearizability from multi-operation atomicity.",
+        "Offer atomic increment and versioned conditional write/transaction."
+      ]
+    },
+    {
+      "id": "lesson-distributed-idempotent-effects",
+      "moduleId": "distributed-3",
+      "kind": "concept",
+      "title": "Retries need an atomic effect boundary",
+      "summary": "Define exactly what a deduplication record protects",
+      "objectives": [
+        "Define exactly what a deduplication record protects.",
+        "Handle a crash between effect and response."
+      ],
+      "body": "## Core idea\n\nAt-least-once delivery permits duplicates. A receiver can suppress duplicate logical requests when a stable identifier and effect are recorded atomically within a defined store. External effects outside that transaction need their own protocol. Deduplication history also has a retention boundary, and reusing an identifier for a different payload must be rejected or otherwise specified.\n\n## Worked example\n\nA job increments a database counter and records its request ID in one transaction. If the response is lost, a retry returns the stored result. Sending an email after that transaction still introduces a separate duplicate or missing-effect problem.\n\n## Try it\n\nDraw crash points for receive, validate, commit effect plus request ID, and respond. Add a second external sink and identify what the original transaction cannot guarantee.\n\n## Check your work\n\nThe design does not claim global exactly-once execution. It defines payload identity, stored result behavior, retention, and the atomic boundary that makes duplicate suppression meaningful.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-dedupe-retention",
+        "distributed-saga-compensation"
+      ]
+    },
+    {
+      "id": "lesson-distributed-leases-fencing",
+      "moduleId": "distributed-3",
+      "kind": "concept",
+      "title": "Leases express time; fencing enforces ownership",
+      "summary": "Distinguish believing a lease is valid from enforcing current ownership",
+      "objectives": [
+        "Distinguish believing a lease is valid from enforcing current ownership.",
+        "Place fencing checks at the protected resource."
+      ],
+      "body": "## Core idea\n\nA lease grants time-bounded ownership under clock and timing assumptions. A paused client can resume after expiry and still attempt work. A monotonically ordered fencing token lets the protected resource reject older owners, provided it actually checks and remembers the appropriate token. A lock service alone cannot stop an external system from accepting stale writes.\n\n## Worked example\n\nOwner A receives token 10 and pauses. Owner B receives 11 and writes. When A resumes, a resource enforcing token order rejects 10. If A writes directly to an unfenced sink, the lock service’s newer lease does not prevent corruption.\n\n## Try it\n\nDesign a worker lease with token-based writes to a synthetic storage service. Include pauses, token persistence, and a resource that temporarily cannot reach the coordinator.\n\n## Check your work\n\nEnforcement occurs at each relevant effect boundary. State whether repeated operations with the same token are allowed and distinguish ownership ordering from operation deduplication.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-split-brain-clock",
+        "distributed-shard-move"
+      ]
+    },
+    {
+      "id": "lesson-distributed-dedupe",
+      "title": "Exactly once, within which boundary?",
+      "summary": "Idempotency · Transactions · API design",
+      "body": "## The problem to understand\n\nWrite pseudocode for an idempotent `POST /transfers` handler. The request contains a stable idempotency key and a source/destination/amount. Two identical retries may run concurrently. Balances and the idempotency table share one transactional database. Explain uniqueness, payload mismatch, result replay, insufficient funds, and the commit-before-response crash window.\n\n```text\nhandleTransfer(key, source, destination, amount):\n    // Give transaction-oriented pseudocode.\n    // Include concurrent retry and crash behavior.\n```\n\n## The mental model\n\nUse a unique constraint on the appropriately scoped idempotency key. Within a transaction, create/claim the key with a canonical request fingerprint, lock or conditionally update the affected balances, validate sufficient funds, and persist the terminal result. Commit the balances and result together. A concurrent loser waits/retries according to database behavior and reads the committed result; it must not apply the effect again.\n\nThe same key with a different fingerprint is a conflict. If the process crashes after commit but before responding, the retry returns the stored result. Decide whether validation/business failures are replayable terminal outcomes and retain keys for the advertised retry horizon. Do not perform an uncoordinated external side effect inside the handler and assume the database transaction makes it exactly once.\n\n## Check your understanding\n\n- Use a scoped unique key and canonical payload fingerprint.\n- Commit balance effects and terminal result atomically.\n- Handle concurrent retries, mismatch, and insufficient funds.\n- Replay after commit-before-response and define retention boundaries.\n\n## Think one step further\n\nHow would the design change if the destination balance lived in another database?\n\n## Primary reading\n\n- [Raft · extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 7,
+      "questionIds": [
+        "distributed-dedupe"
+      ],
+      "moduleId": "distributed-3",
+      "kind": "workshop",
+      "objectives": [
+        "Use a scoped unique key and canonical payload fingerprint.",
+        "Commit balance effects and terminal result atomically."
+      ]
+    },
+    {
+      "id": "lesson-distributed-raft-read",
+      "title": "The old leader still answers",
+      "summary": "Raft · Linearizable reads · Fencing",
+      "body": "## The problem to understand\n\nA Raft leader becomes partitioned from a majority but can still serve a client. It has an old committed value and has not yet learned about a newer leader. Why is “read locally because I was elected leader” insufficient for linearizable reads? Describe a quorum-confirmed read approach and the additional assumptions required by a lease-based alternative.\n\n## The mental model\n\nAn isolated former leader can continue believing it is leader while a majority elects another leader and commits newer writes. A local read may then return a value older than a completed write, violating linearizability. Past election authority is not proof of current authority.\n\nA safe read-index style protocol establishes the leader’s current-term authority with a quorum and waits until the relevant committed index has been applied before serving the read. The leader also needs the protocol’s current-term commitment conditions; merely pinging any nodes is not a proof. Lease reads replace some communication with timing assumptions, requiring carefully bounded clock drift/lease behavior and correct interaction with elections and pauses. An unbounded process pause or unsound lease can restore the stale-leader problem.\n\n## Check your understanding\n\n- Construct the isolated old-leader/new-majority history.\n- Confirm current authority with a quorum and wait for applied state.\n- Recognize current-term protocol requirements.\n- State timing/election assumptions behind lease alternatives.\n\n## Think one step further\n\nWhy is a heartbeat sent only before a long read computation not necessarily enough to validate an arbitrary later response?\n\n## Primary reading\n\n- [Raft · extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 7,
+      "questionIds": [
+        "distributed-raft-read"
+      ],
+      "moduleId": "distributed-3",
+      "kind": "workshop",
+      "objectives": [
+        "Construct the isolated old-leader/new-majority history.",
+        "Confirm current authority with a quorum and wait for applied state."
+      ]
+    },
+    {
+      "id": "lesson-distributed-repair-conflicts",
+      "moduleId": "distributed-4",
+      "kind": "concept",
+      "title": "Convergence requires a defined merge or repair rule",
+      "summary": "Separate state repair from conflict resolution",
+      "objectives": [
+        "Separate state repair from conflict resolution.",
+        "Choose conflict semantics that match the data type."
+      ],
+      "body": "## Core idea\n\nReplicas can exchange missing state, but they still need semantics for concurrent updates. Last-writer-wins selects one value under a chosen timestamp order; it does not preserve every intent. CRDT designs use specific state and merge properties to converge under their assumptions. Deletions require metadata and retention rules so old replicas do not resurrect removed state.\n\n## Worked example\n\nMerging two independent plain integer counter values by maximum loses increments. A grow-only counter can instead track a component per writer and merge component-wise maxima, then sum, under a stable writer identity model.\n\n## Try it\n\nSimulate two replicas partitioning, incrementing a grow-only counter, and exchanging state in different orders with duplicates. Then explain why decrement or deletion needs a different design.\n\n## Check your work\n\nThe merge is associative, commutative, and idempotent for the defined state. The explanation names metadata growth and identity assumptions instead of claiming every application can use the same merge rule.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "distributed-anti-entropy",
+        "distributed-crdt-counter"
+      ]
+    },
+    {
+      "id": "lesson-distributed-deterministic-faults",
+      "moduleId": "distributed-4",
+      "kind": "workshop",
+      "title": "Test histories under controlled faults",
+      "summary": "Separate a test oracle from the implementation under test",
+      "objectives": [
+        "Separate a test oracle from the implementation under test.",
+        "Exercise partitions, pauses, duplicates, and recovery reproducibly."
+      ],
+      "body": "## Core idea\n\nDistributed tests need a failure schedule, observable operations, and an oracle for the promised guarantee. Inject faults at defined boundaries and record invocation/response histories. A deterministic simulator can explore many schedules but remains limited by its model. Real-process tests reveal additional I/O and deployment behavior. Use both types of evidence according to the claim.\n\n## Worked example\n\nA test pauses an old leader after it receives a request, elects another leader, then resumes the old one. The oracle checks that responses still admit the promised history and that stale ownership cannot produce forbidden effects.\n\n## Try it\n\nWrite five fault schedules for a replicated register, including response loss after commitment and restart with a lagging log. State the invariant each schedule challenges.\n\n## Check your work\n\nThe oracle does not merely compare internal variables with themselves. Seeds, message order, and observed histories are saved so a failed run can be replayed.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 25,
+      "questionIds": [
+        "distributed-history-checker"
+      ]
+    },
+    {
+      "id": "lesson-distributed-fencing",
+      "title": "The lock expired. The old owner did not.",
+      "summary": "Leases · Fencing tokens · Partial failure",
+      "body": "## The problem to understand\n\nWorker A holds a leased lock and begins writing to shared storage. It pauses long enough for the lease to expire. Worker B obtains the lock and starts its work. A resumes and continues writing. Design protection against stale-owner writes. Explain why checking the lease locally before a write is insufficient, and where monotonically increasing fencing tokens must be enforced.\n\n## The mental model\n\nA lease expiry does not stop the old process. A local check can become stale between checking and acting, especially across pauses or network delays. Issue a monotonically increasing fencing token when ownership is granted. Every protected storage operation carries the token, and the resource atomically rejects tokens older than the highest accepted epoch for that ownership domain.\n\nEnforcement must live at the side-effect boundary, not only in the lock service or client. Define token scope, persistence across restarts, wrap/monotonicity behavior, and ordering of multi-step operations. B’s higher token prevents later writes from A once the resource advances its fence. If the resource cannot validate tokens, the lease alone does not provide this guarantee; use a transactional/conditional resource API or change the architecture. Idempotency is still needed for repeated operations within one epoch.\n\n## Check your understanding\n\n- Explain why expired leases do not revoke a paused process’s ability to act.\n- Issue monotonically ordered ownership tokens.\n- Enforce tokens atomically at the protected resource.\n- Discuss persistence, token scope, and within-epoch idempotency.\n\n## Think one step further\n\nHow would fencing work when the protected action is sending an email through a provider with no conditional-write API?\n\n## Primary reading\n\n- [Raft · extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 11,
+      "questionIds": [
+        "distributed-fencing"
+      ],
+      "moduleId": "distributed-4",
+      "kind": "workshop",
+      "objectives": [
+        "Explain why expired leases do not revoke a paused process’s ability to act.",
+        "Issue monotonically ordered ownership tokens."
+      ]
+    },
+    {
+      "id": "lesson-distributed-distributed-capstone",
+      "moduleId": "distributed-4",
+      "kind": "capstone",
+      "title": "Capstone: a replicated register with a failure diary",
+      "summary": "Integrate consistency, replication, retries, and recovery",
+      "objectives": [
+        "Integrate consistency, replication, retries, and recovery.",
+        "Defend guarantees using histories and explicit assumptions."
+      ],
+      "body": "## Core idea\n\nBuild an educational state-machine simulator for a three-node replicated register, or use a maintained consensus library in a local service. Avoid presenting an incomplete custom protocol as production consensus. Specify read/write semantics, durable boundaries, retries, failure assumptions, and leadership behavior. Log every operation and injected fault.\n\n## Worked example\n\nA write commits but its response is lost. The client retries while a leader change occurs. Later, a paused old leader resumes. Your model must preserve acknowledged state and explain the result of every uncertain request.\n\n## Try it\n\nDeliver a protocol note, simulator or service, five reproducible fault schedules, and operation histories checked against the stated guarantee. Include a recovery trace and a list of excluded failures.\n\n## Check your work\n\nReview safety, liveness assumptions, atomic effect boundaries, and reproducibility. A passing small test suite is evidence within its model; document what remains unproven or delegated to the library.\n\n## Primary reading\n\n- [Raft extended paper](https://raft.github.io/raft.pdf)",
+      "minutes": 60,
+      "questionIds": [
+        "distributed-geo-consensus",
+        "distributed-fanout-tail",
+        "distributed-event-time-watermark"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Understand processes, networking, concurrency, and basic data structures.",
+    "Be comfortable tracing state transitions and simple set intersections."
+  ],
+  "outcomes": [
+    "Specify safety and liveness under a stated network and failure model.",
+    "Distinguish consistency guarantees using concrete operation histories.",
+    "Explain quorum, consensus, retry, and fencing assumptions.",
+    "Design and test a replicated service with explicit uncertain outcomes."
+  ],
+  "modules": [
+    {
+      "id": "distributed-1",
+      "title": "Failure models and guarantees",
+      "description": "Establish partial failure, histories, clocks, and consistency.",
+      "level": "Foundation"
+    },
+    {
+      "id": "distributed-2",
+      "title": "Replication and coordination",
+      "description": "Connect quorum intersection, log agreement, and atomic updates.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "distributed-3",
+      "title": "Retries and ownership",
+      "description": "Bound duplicate effects and establish current leadership.",
+      "level": "Advanced"
+    },
+    {
+      "id": "distributed-4",
+      "title": "Recovery and validation",
+      "description": "Integrate state repair, observability, and deterministic fault testing.",
+      "level": "Expert"
+    }
+  ]
+}

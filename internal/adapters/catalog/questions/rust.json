@@ -1,0 +1,980 @@
+[
+  {
+    "id": "rust-borrow",
+    "topic": "rust",
+    "title": "When does a borrow actually end?",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 4,
+    "tags": [
+      "Ownership",
+      "NLL"
+    ],
+    "prompt": "Assume stable Rust and an ordinary `Vec<i32>`. Does the following program compile? Choose the most precise explanation. Focus on the last **use** of `first`, rather than the closing brace of its scope.",
+    "solution": "It compiles. Under non-lexical lifetimes, the immutable borrow needed by `first` ends after its last use in `println!`. The later `push` can therefore borrow `values` mutably. The reference binding still has a lexical scope, but the active borrow does not need to last for that entire scope.\n\nMoving `println!` below `push` changes the result: `push` may reallocate the vector, and the old element reference cannot remain valid across that operation. Capacity alone does not make that conflicting borrow acceptable to the borrow checker.",
+    "rubric": [
+      "Distinguish the binding’s scope from the borrow’s lifetime.",
+      "Identify println! as the last use of the element reference.",
+      "Explain why using first after push would be rejected."
+    ],
+    "hints": [
+      "Find the last expression that reads first.",
+      "A reference’s active borrow can end before its surrounding scope."
+    ],
+    "followUp": "If the vector has spare capacity, can you legally use first after push? Explain the distinction between an implementation detail and the borrowing rule.",
+    "references": [
+      {
+        "title": "The Rust Book · ownership and concurrency",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ],
+    "code": "let mut values = vec![10, 20, 30];\nlet first = &values[0];\nprintln!(\"{first}\");\nvalues.push(40);",
+    "language": "rust",
+    "options": [
+      "It fails: every borrow lasts until the closing brace.",
+      "It compiles: the immutable borrow ends at its last use.",
+      "It compiles only if push does not reallocate.",
+      "It fails because Vec elements cannot be borrowed individually."
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "rust-lifetime",
+    "topic": "rust",
+    "title": "A lifetime cannot keep a value alive",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Lifetimes",
+      "API design"
+    ],
+    "prompt": "This API tries to return a borrowed view of a normalized string. Explain why adding a lifetime annotation cannot repair it. Rewrite the API with an honest ownership contract, and describe when `Cow<str>` would be a useful alternative.",
+    "solution": "`normalized` owns a buffer that is destroyed when the function returns. `trim` borrows that buffer. A lifetime parameter describes relationships between existing references; it cannot extend the storage duration of a local `String`.\n\nReturn an owned `String`, for example `input.to_lowercase().trim().to_owned()`. This has a simple contract: the caller owns the returned bytes. An API returning `Cow<'a, str>` can borrow from the input when no normalization is necessary, and return `Cow::Owned` when it must construct new bytes. Its borrowed variant must never refer to the local temporary.",
+    "rubric": [
+      "Locate the allocation that is dropped at function exit.",
+      "Explain what lifetime annotations can and cannot express.",
+      "Provide an owned return type and a valid Cow borrowing case."
+    ],
+    "hints": [
+      "What object owns the bytes behind the returned &str?",
+      "Changing a type annotation does not change when a destructor runs."
+    ],
+    "followUp": "Design a normalization function that returns a borrowed string when the input is already normalized.",
+    "references": [
+      {
+        "title": "The Rust Book · ownership and concurrency",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ],
+    "code": "fn normalize<'a>(input: &'a str) -> &'a str {\n    let normalized = input.to_lowercase();\n    normalized.trim()\n}",
+    "language": "rust"
+  },
+  {
+    "id": "rust-shared-counter",
+    "topic": "rust",
+    "title": "Shared ownership is not synchronization",
+    "difficulty": "Intermediate",
+    "format": "code",
+    "minutes": 10,
+    "tags": [
+      "Send + Sync",
+      "Concurrency"
+    ],
+    "prompt": "A worker pool must increment a shared counter from four OS threads and report the exact final value after all threads finish. Implement a correct Rust version. Explain why replacing `Rc` with `Arc` alone is insufficient for `RefCell<u64>`. Offer an atomic alternative, including the ordering required **only for the counter value**.",
+    "solution": "Use `Arc<Mutex<u64>>`, clone the Arc into each thread, acquire the mutex before incrementing, and join all handles before reading the final value. `Rc` is not thread-safe reference counting. `Arc` provides thread-safe shared ownership, but does not make its payload thread-safe; `RefCell` has unsynchronized runtime borrowing state and is not `Sync`.\n\nFor an independent numeric counter, `Arc<AtomicU64>` with `fetch_add(1, Ordering::Relaxed)` is sufficient on targets supporting that atomic type. Each increment is atomic; joining the threads establishes completion before the final load. Relaxed arithmetic does not publish unrelated payload data.",
+    "rubric": [
+      "Use thread-safe ownership and synchronization for the payload.",
+      "Join all workers before reading the final total.",
+      "Explain why Arc<RefCell<_>> is unsuitable and why Relaxed is enough for an independent counter."
+    ],
+    "hints": [
+      "Separate ownership of the allocation from concurrent access to its contents.",
+      "A mutex protects arbitrary invariants; an atomic can protect this one integer."
+    ],
+    "followUp": "What changes if each increment also announces that a corresponding non-atomic result buffer is ready?",
+    "references": [
+      {
+        "title": "The Rust Book · ownership and concurrency",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ],
+    "code": "use std::thread;\n\nfn count(workers: usize, iterations: u64) -> u64 {\n    // Implement shared ownership, synchronization, and joining here.\n    todo!(\"Implement count\")\n}\n\nfn main() {\n    println!(\"{}\", count(4, 1000));\n}\n",
+    "language": "rust",
+    "tests": "#[cfg(test)]\nmod tests {\n    use super::*;\n    #[test]\n    fn four_workers() { assert_eq!(count(4, 1000), 4000); }\n    #[test]\n    fn no_workers() { assert_eq!(count(0, 100), 0); }\n    #[test]\n    fn no_iterations() { assert_eq!(count(4, 0), 0); }\n    #[test]\n    fn repeated_contention() {\n        for _ in 0..10 { assert_eq!(count(8, 2000), 16000); }\n    }\n}\n"
+  },
+  {
+    "id": "rust-blocking-future",
+    "topic": "rust",
+    "title": "The async task that stopped the world",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Async",
+      "Executors"
+    ],
+    "prompt": "On a single-thread async runtime, a periodic heartbeat stops whenever this handler runs. The file is small on your laptop but sometimes lives on a slow filesystem in production. Identify both blocking operations, explain why `async fn` does not prevent them, and propose a repair with bounded concurrency.",
+    "solution": "An async function becomes a state machine; it is not automatically executed on a separate OS thread. Both `std::fs::read` and `std::thread::sleep` block the executor thread, preventing unrelated futures from being polled.\n\nUse the runtime’s asynchronous timer. Use an async filesystem API or move blocking work into a blocking pool, with a semaphore or another admission limit around it. Many filesystem wrappers also use a thread pool internally, so unbounded submission still creates a queueing problem. Propagate errors rather than panicking, and decide how cancellation interacts with work that has already started in a blocking thread.",
+    "rubric": [
+      "Identify both blocking calls and their effect on executor polling.",
+      "Replace sleep with an asynchronous timer and isolate filesystem work.",
+      "Bound blocking work and discuss cancellation after it starts."
+    ],
+    "hints": [
+      "Which statements yield control to the runtime?",
+      "An async function can run synchronously until it reaches an await that returns Pending."
+    ],
+    "followUp": "Why might wrapping every request in spawn_blocking still produce worse p99 latency under overload?",
+    "references": [
+      {
+        "title": "The Rust Book · ownership and concurrency",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ],
+    "code": "async fn load_profile(path: &str) -> Vec<u8> {\n    let bytes = std::fs::read(path).unwrap();\n    std::thread::sleep(std::time::Duration::from_secs(1));\n    bytes\n}",
+    "language": "rust"
+  },
+  {
+    "id": "rust-publication",
+    "topic": "rust",
+    "title": "Relaxed is not a publication protocol",
+    "difficulty": "Advanced",
+    "format": "multi_select",
+    "minutes": 9,
+    "tags": [
+      "Atomics",
+      "Memory ordering"
+    ],
+    "prompt": "A producer initializes a payload, then sets an atomic ready flag. A consumer waits for the flag, then reads the payload. The payload is ordinary memory accessed through an otherwise correctly constructed `UnsafeCell`; there is exactly one publication and no subsequent mutation. Which statements are correct? Select all that apply.",
+    "solution": "A release store and an acquire load that actually observes that store establish a happens-before edge from payload initialization to its read. `Relaxed` only guarantees atomic access to the flag and its per-location modification order; it does not publish the payload. An x86 test passing is not a language-level proof: compiler transformations matter too.\n\n`UnsafeCell` permits interior mutability, but is not synchronization. Its presence alone neither makes a wrapper `Sync` nor removes the obligation to prevent data races. A safe implementation also needs a valid ownership and lifetime story for the payload.",
+    "rubric": [
+      "Distinguish flag atomicity from ordering of the payload.",
+      "Require the acquire load to observe the release publication.",
+      "Preserve UnsafeCell, lifetime, and Sync obligations."
+    ],
+    "hints": [
+      "The question is about an ordering relationship between two different memory locations.",
+      "Acquire and release synchronize only through an appropriate reads-from relationship."
+    ],
+    "followUp": "What additional protocol is needed if the producer reuses the same payload slot?",
+    "references": [
+      {
+        "title": "The Rustonomicon · atomics",
+        "url": "https://doc.rust-lang.org/nomicon/atomics.html"
+      }
+    ],
+    "options": [
+      "Relaxed access to the flag is sufficient on every Rust target.",
+      "Release on publication and acquire on observation can order the payload accesses.",
+      "UnsafeCell alone makes cross-thread reads and writes safe.",
+      "A passing stress test on x86 does not prove the protocol correct."
+    ],
+    "correct": [
+      1,
+      3
+    ]
+  },
+  {
+    "id": "rust-ring",
+    "topic": "rust",
+    "title": "One ring, two ownership transfers",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 20,
+    "tags": [
+      "SPSC",
+      "Unsafe",
+      "Backpressure"
+    ],
+    "prompt": "Design a bounded single-producer, single-consumer ring for non-Copy values. Use a power-of-two capacity and monotonic logical head/tail counters. Explain full/empty detection, the ordering of payload writes and reads, and why safe reuse requires a second synchronization direction. Address destruction, counter wrap, and the behavior when the queue is full. Pseudocode is welcome; a complete unsafe implementation is not required.",
+    "solution": "Treat each slot as storage whose ownership transfers in two directions. The producer checks a consumer-published head, initializes its exclusively owned slot, then release-stores tail. The consumer acquire-loads tail before reading an initialized value, moves it out, then release-stores head. The producer acquire-loads head before reusing that storage. The second direction prevents a new write from racing with an unfinished read.\n\nEmpty means head equals tail. Full means their bounded logical distance equals capacity. Physical indexes use a mask, while wrap arithmetic must be unsigned and designed so that the logical distance remains unambiguous. Do not create references to uninitialized values. Drop any live elements exactly once after both endpoints stop. Return a value or explicit full error instead of silently overwriting unread data. Padding hot counters may reduce false sharing but is not part of the correctness proof.",
+    "rubric": [
+      "Describe release/acquire ownership transfer in both directions.",
+      "Define full, empty, indexing, and a sound counter-wrap invariant.",
+      "Handle uninitialized storage and exactly-once destruction of live values.",
+      "Specify a bounded and explicit full-queue policy."
+    ],
+    "hints": [
+      "Publishing an item and publishing a reusable slot are separate events.",
+      "Imagine the consumer is preempted halfway through moving an element out."
+    ],
+    "followUp": "How does the proof change with multiple producers, and why is adding a fetch_add to tail insufficient?",
+    "references": [
+      {
+        "title": "The Rust Book · ownership and concurrency",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ]
+  },
+  {
+    "id": "rust-move-copy",
+    "topic": "rust",
+    "title": "A String changes hands",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Ownership",
+      "Move semantics"
+    ],
+    "prompt": "After `let a = String::from(\"hi\"); let b = a;`, may safe Rust print `a`? Choose the reason.",
+    "solution": "No. String is not Copy, so assigning it transfers ownership to b. Its heap bytes need not be duplicated. Use a.clone() before the move when two independent owned strings are required.",
+    "hints": [
+      "Distinguish a move from a deep copy.",
+      "Ask which binding now drops the allocation."
+    ],
+    "rubric": [
+      "Identify the move.",
+      "Explain why a cannot be reused.",
+      "Distinguish clone from assignment."
+    ],
+    "followUp": "How does assigning a u64 differ?",
+    "references": [
+      {
+        "title": "The Rust Programming Language",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ],
+    "options": [
+      "Yes; assignments always copy",
+      "No; ownership moves to b",
+      "Yes; the heap is reference counted",
+      "No; String cannot be assigned"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "rust-str-boundary",
+    "topic": "rust",
+    "title": "One character is more than one byte",
+    "difficulty": "Foundation",
+    "format": "debug",
+    "minutes": 5,
+    "tags": [
+      "UTF-8",
+      "Strings"
+    ],
+    "prompt": "Why does `&\"éclair\"[0..1]` panic? Give a way to obtain the first Unicode scalar value and explain why it may not be a complete displayed character.",
+    "solution": "Rust string slices require UTF-8 boundaries. é occupies two bytes, so byte index 1 splits its encoding. `s.chars().next()` returns the first scalar value; a grapheme may contain multiple scalars, requiring grapheme segmentation.",
+    "hints": [
+      "String offsets count bytes.",
+      "A combining mark can follow a base character."
+    ],
+    "rubric": [
+      "Identify the invalid byte boundary.",
+      "Use chars for scalar iteration.",
+      "Distinguish scalars from graphemes."
+    ],
+    "followUp": "When is s.get(0..1) preferable to indexing?",
+    "references": [
+      {
+        "title": "Rust standard library · str and UTF-8",
+        "url": "https://doc.rust-lang.org/std/primitive.str.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-option-match",
+    "topic": "rust",
+    "title": "An absent value needs a branch",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Option",
+      "Pattern matching"
+    ],
+    "prompt": "A lookup returns Option<&User>. Explain how match and map handle absence without manufacturing a default user.",
+    "solution": "Match separates Some(user) from None explicitly. map transforms only the contained reference and preserves None. Neither requires a sentinel user or unwrap; the caller can return absence or convert it into a domain error.",
+    "hints": [
+      "List the two Option variants.",
+      "Does map invoke its closure for None?"
+    ],
+    "rubric": [
+      "Handle both variants.",
+      "Preserve absence through map.",
+      "Avoid a fabricated sentinel."
+    ],
+    "followUp": "When would and_then be needed instead of map?",
+    "references": [
+      {
+        "title": "Rust standard library · Option",
+        "url": "https://doc.rust-lang.org/std/option/enum.Option.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-result-propagation",
+    "topic": "rust",
+    "title": "The question mark returns early",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Result",
+      "Errors"
+    ],
+    "prompt": "Inside a function returning Result<u64, MyError>, what must hold for `read_text(path)?` when read_text returns Result<String, io::Error>?",
+    "solution": "On success, ? extracts the String and execution continues. On error it returns early, converting io::Error into MyError through From. The enclosing function must support this error propagation; ? does not panic or silently ignore failure.",
+    "hints": [
+      "Separate Ok and Err paths.",
+      "Look for an error conversion implementation."
+    ],
+    "rubric": [
+      "Explain success extraction.",
+      "Explain early return.",
+      "Require compatible error conversion."
+    ],
+    "followUp": "How can map_err attach the path before propagation?",
+    "references": [
+      {
+        "title": "Rust standard library · Result",
+        "url": "https://doc.rust-lang.org/std/result/enum.Result.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-iterator-lazy",
+    "topic": "rust",
+    "title": "The transformation that never ran",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Iterators",
+      "Laziness"
+    ],
+    "prompt": "An iterator calls `.map(|x| { println!(\"{x}\"); x * 2 })`, then is dropped without consumption. How many times does that closure run?",
+    "solution": "Zero. map creates a lazy adaptor. A consumer such as collect, a for loop, or sum requests elements and drives execution. Creating the adaptor does not traverse its input.",
+    "hints": [
+      "Who requests the next element?",
+      "Dropping this adaptor does not consume it."
+    ],
+    "rubric": [
+      "Answer zero.",
+      "Identify laziness.",
+      "Name a consumer."
+    ],
+    "followUp": "How does for_each differ here?",
+    "references": [
+      {
+        "title": "Rust standard library · Iterator",
+        "url": "https://doc.rust-lang.org/std/iter/trait.Iterator.html"
+      }
+    ],
+    "options": [
+      "Once",
+      "Once per input element",
+      "Zero",
+      "Implementation dependent"
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "rust-borrowed-api",
+    "topic": "rust",
+    "title": "Borrow the input you only read",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "API design",
+      "Slices"
+    ],
+    "prompt": "A helper only reads a sequence of integers. Compare accepting &Vec<i32> with &[i32], including the effect on callers and ownership.",
+    "solution": "Both borrow rather than own data. &[i32] exposes the needed contiguous sequence without requiring a Vec owner, allowing arrays, slices, and vectors through coercion. &Vec adds container-specific restrictions without benefit for a read-only traversal.",
+    "hints": [
+      "Which operations need vector capacity?",
+      "Consider callers with an array."
+    ],
+    "rubric": [
+      "Preserve borrowed ownership.",
+      "Prefer the narrower slice contract.",
+      "Identify additional compatible callers."
+    ],
+    "followUp": "What changes if the helper must append elements?",
+    "references": [
+      {
+        "title": "The Rust Programming Language",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ]
+  },
+  {
+    "id": "rust-drop-scope",
+    "topic": "rust",
+    "title": "A lock guard survives its last read",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "RAII",
+      "Mutex"
+    ],
+    "prompt": "A Rust function locks a mutex, reads a field, then performs slow I/O in the same block. Why might contention remain high even though the borrow checker no longer needs the field reference?",
+    "solution": "The MutexGuard owns the lock and is ordinarily dropped at its drop scope, not merely its last read. Put the lock and field copy in a smaller block or explicitly drop the guard before I/O. Non-lexical borrow lifetimes do not generally move destructor execution earlier.",
+    "hints": [
+      "The guard has a destructor.",
+      "Separate borrow lifetime from drop scope."
+    ],
+    "rubric": [
+      "Identify guard ownership.",
+      "Distinguish borrow analysis from dropping.",
+      "Release the guard before slow I/O."
+    ],
+    "followUp": "What must you reconsider if the copied field can become stale?",
+    "references": [
+      {
+        "title": "Rust Reference · destructors",
+        "url": "https://doc.rust-lang.org/reference/destructors.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-arc-count",
+    "topic": "rust",
+    "title": "Count owners rather than readers",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Arc",
+      "Reference counting"
+    ],
+    "prompt": "An Arc starts with one strong owner. Three clones are created, two of those clones are dropped, and four Weak handles are created. With no concurrent operations, what is Arc::strong_count?",
+    "solution": "2: the original plus one remaining clone. Weak handles do not increase the strong count or keep the contained value alive after all strong owners disappear. Counts are observations, not synchronization protocols.",
+    "hints": [
+      "Count only live strong handles.",
+      "Weak ownership is tracked separately."
+    ],
+    "rubric": [
+      "Start with one owner.",
+      "Add three and subtract two.",
+      "Exclude Weak handles."
+    ],
+    "followUp": "What does Weak::upgrade return after the last strong owner drops?",
+    "references": [
+      {
+        "title": "Rust standard library · Arc",
+        "url": "https://doc.rust-lang.org/std/sync/struct.Arc.html"
+      }
+    ],
+    "expected": "2"
+  },
+  {
+    "id": "rust-interior-mutability",
+    "topic": "rust",
+    "title": "A borrow check moves to runtime",
+    "difficulty": "Intermediate",
+    "format": "multi_select",
+    "minutes": 8,
+    "tags": [
+      "RefCell",
+      "Interior mutability"
+    ],
+    "prompt": "Select the true statements about RefCell<T> in single-threaded safe Rust.",
+    "solution": "RefCell permits mutation through a shared reference while checking borrow exclusivity at runtime. Conflicting borrow calls can panic; try_borrow_mut reports failure instead. RefCell alone is not a thread-safe replacement for a mutex.",
+    "hints": [
+      "The borrowing rules still apply.",
+      "Compare borrow_mut with try_borrow_mut."
+    ],
+    "rubric": [
+      "Identify runtime checks.",
+      "Recognize the fallible borrowing API.",
+      "Reject cross-thread synchronization claims."
+    ],
+    "followUp": "When would Cell<T> avoid a guard-based borrow?",
+    "references": [
+      {
+        "title": "Rust standard library · RefCell",
+        "url": "https://doc.rust-lang.org/std/cell/struct.RefCell.html"
+      }
+    ],
+    "options": [
+      "It permits unlimited simultaneous mutable borrows",
+      "borrow_mut can panic on a conflict",
+      "try_borrow_mut can return an error",
+      "It automatically makes T Sync"
+    ],
+    "correct": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "rust-hashmap-entry",
+    "topic": "rust",
+    "title": "Update an entry without a second lookup",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "HashMap",
+      "Entry API"
+    ],
+    "prompt": "Explain how `*counts.entry(word).or_insert(0) += 1` implements counting and what happens to the supplied key when an entry already exists.",
+    "solution": "entry performs a lookup and returns an occupied or vacant entry. or_insert yields a mutable reference to the stored count, inserting zero only for a vacant entry. The supplied owned key is consumed by entry; an unused key is dropped rather than replacing the existing key.",
+    "hints": [
+      "Both entry variants yield access to a count.",
+      "Ownership of the supplied key transfers into the call."
+    ],
+    "rubric": [
+      "Describe occupied and vacant cases.",
+      "Explain the mutable reference.",
+      "Account for key ownership."
+    ],
+    "followUp": "When is or_insert_with preferable to or_insert?",
+    "references": [
+      {
+        "title": "Rust standard library · Entry",
+        "url": "https://doc.rust-lang.org/std/collections/hash_map/enum.Entry.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-trait-dispatch",
+    "topic": "rust",
+    "title": "One interface, two dispatch strategies",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Traits",
+      "Dispatch"
+    ],
+    "prompt": "Compare `fn run(x: impl Work)` with `fn run(x: &dyn Work)` for a dyn-compatible trait. Discuss code generation, heterogeneous storage, and ownership.",
+    "solution": "impl Work is a generic parameter, normally monomorphized for each concrete type. &dyn Work uses a borrowed trait object with dynamic dispatch and can refer to different implementing types through one type. Neither syntax inherently transfers heap ownership; Box<dyn Work> is a separate owned representation.",
+    "hints": [
+      "Separate generics from trait objects.",
+      "A borrowed trait object need not allocate."
+    ],
+    "rubric": [
+      "Explain static versus dynamic dispatch.",
+      "Identify heterogeneous trait-object use.",
+      "Separate dispatch from allocation."
+    ],
+    "followUp": "Which tradeoff changes for a very small frequently called method?",
+    "references": [
+      {
+        "title": "Rust Reference · trait objects",
+        "url": "https://doc.rust-lang.org/reference/types/trait-object.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-send-sync",
+    "topic": "rust",
+    "title": "Sharing and moving are separate promises",
+    "difficulty": "Intermediate",
+    "format": "multi_select",
+    "minutes": 8,
+    "tags": [
+      "Send",
+      "Sync"
+    ],
+    "prompt": "Which statements correctly describe Rust's Send and Sync marker traits?",
+    "solution": "Send means ownership can safely cross thread boundaries. Sync means shared references can safely cross them: T is Sync when &T is Send. Arc supplies shared ownership but cannot make an arbitrary non-thread-safe inner value safe.",
+    "hints": [
+      "Ask whether the thread receives T or &T.",
+      "Reference counting does not guard inner mutation."
+    ],
+    "rubric": [
+      "Define Send.",
+      "Define Sync through shared references.",
+      "Reject Arc as universal synchronization."
+    ],
+    "followUp": "Why is Arc<Mutex<T>> useful for shared mutation?",
+    "references": [
+      {
+        "title": "Rustonomicon · Send and Sync",
+        "url": "https://doc.rust-lang.org/nomicon/send-and-sync.html"
+      }
+    ],
+    "options": [
+      "Send concerns transferring ownership across threads",
+      "Sync concerns sharing references across threads",
+      "Arc<T> is always Send regardless of T",
+      "Sync guarantees lock-free operations"
+    ],
+    "correct": [
+      0,
+      1
+    ]
+  },
+  {
+    "id": "rust-mutex-poison",
+    "topic": "rust",
+    "title": "A panic leaves an invariant in doubt",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Mutex",
+      "Poisoning"
+    ],
+    "prompt": "A thread panics while holding std::sync::Mutex. The next lock returns PoisonError. Should the caller simply unwrap the contained guard and continue?",
+    "solution": "Poisoning warns that a protected invariant may have been interrupted; it is advisory rather than a memory-safety guarantee. Recovering the guard is possible, but first validate or repair the state, or propagate a controlled failure. Ignoring poison cannot establish application correctness.",
+    "hints": [
+      "The lock can still protect memory access.",
+      "The interrupted mutation may be incomplete."
+    ],
+    "rubric": [
+      "Explain the warning.",
+      "Distinguish safety from invariants.",
+      "Propose validation or explicit failure."
+    ],
+    "followUp": "When could rebuilding the protected value be a sound recovery?",
+    "references": [
+      {
+        "title": "Rust standard library · Mutex poisoning",
+        "url": "https://doc.rust-lang.org/std/sync/struct.Mutex.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-async-laziness",
+    "topic": "rust",
+    "title": "Constructing work does not schedule it",
+    "difficulty": "Intermediate",
+    "format": "choice",
+    "minutes": 8,
+    "tags": [
+      "Async",
+      "Futures"
+    ],
+    "prompt": "Calling an async fn returns a future. Before that future is polled or handed to an executor, when does the async function body run?",
+    "solution": "It does not run yet. Calling an async fn constructs a future representing suspended work. Polling drives it; spawning schedules it for polling. Merely constructing and dropping the future does not execute its body.",
+    "hints": [
+      "A future represents work.",
+      "An executor drives poll."
+    ],
+    "rubric": [
+      "Identify deferred execution.",
+      "Explain polling.",
+      "Distinguish construction from spawning."
+    ],
+    "followUp": "Why can dropping an in-progress future require cancellation-safe code?",
+    "references": [
+      {
+        "title": "Rust Reference · async functions",
+        "url": "https://doc.rust-lang.org/reference/items/functions.html#async-functions"
+      }
+    ],
+    "options": [
+      "Immediately to completion",
+      "On a newly created OS thread",
+      "Only when polled",
+      "At the next garbage collection"
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "rust-error-context",
+    "topic": "rust",
+    "title": "Keep the cause beneath the message",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Errors",
+      "API design"
+    ],
+    "prompt": "Design an error type for loading configuration that distinguishes missing files, malformed content, and invalid domain values. Callers need both a useful message and access to the underlying cause.",
+    "solution": "Use structured variants carrying path and relevant detail, with source errors for I/O and parsing failures. Implement Display for context and Error::source for causal inspection. Keep domain validation distinct so callers can choose recovery without matching message strings.",
+    "hints": [
+      "Separate stages of the operation.",
+      "Preserve the original error as data."
+    ],
+    "rubric": [
+      "Define distinct variants.",
+      "Retain contextual fields and causes.",
+      "Support programmatic handling."
+    ],
+    "followUp": "Which error details should be redacted before showing them to an untrusted caller?",
+    "references": [
+      {
+        "title": "Rust standard library · Error",
+        "url": "https://doc.rust-lang.org/std/error/trait.Error.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-unsafe-boundary",
+    "topic": "rust",
+    "title": "A safe wrapper must carry the proof",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Unsafe",
+      "Invariants"
+    ],
+    "prompt": "An unsafe function constructs a slice with from_raw_parts. What obligations must a safe wrapper establish before returning that slice?",
+    "solution": "The pointer must meet alignment and non-null requirements, and the referenced range must lie within one allocation and contain initialized valid elements. The allocation must outlive the slice; aliasing and mutation must respect shared-reference rules. A length check alone proves none of these lifetime or provenance obligations.",
+    "hints": [
+      "A pointer and length do not express ownership.",
+      "Include validity even for a zero-length slice."
+    ],
+    "rubric": [
+      "Check pointer and range validity.",
+      "Tie lifetime to a real owner.",
+      "Preserve aliasing rules."
+    ],
+    "followUp": "Why is a lifetime parameter chosen solely by the caller dangerous here?",
+    "references": [
+      {
+        "title": "Rust standard library · from_raw_parts safety",
+        "url": "https://doc.rust-lang.org/std/slice/fn.from_raw_parts.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-pin-contract",
+    "topic": "rust",
+    "title": "An address promise needs an owner",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Pin",
+      "Futures"
+    ],
+    "prompt": "Why does Pin<Box<T>> restrict moving a !Unpin value, and why does pinning a value not by itself make references inside it valid?",
+    "solution": "Pin promises that the pointee remains at its address until its destruction under the pinning contract. Moving the Box handle does not move its allocation. Pin does not initialize self-references or prove their lifetimes; construction, projection, and unsafe code must preserve those invariants separately.",
+    "hints": [
+      "Distinguish the pointer handle from its pointee.",
+      "Address stability is only one invariant."
+    ],
+    "rubric": [
+      "Explain stable pointee location.",
+      "Distinguish moving Box from moving T.",
+      "Require valid initialization and projection."
+    ],
+    "followUp": "Why can an Unpin value be moved through safe Pin APIs?",
+    "references": [
+      {
+        "title": "Rust standard library · Pin",
+        "url": "https://doc.rust-lang.org/std/pin/index.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-ffi-ownership",
+    "topic": "rust",
+    "title": "A foreign pointer needs a return ticket",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "FFI",
+      "Ownership"
+    ],
+    "prompt": "Design a Rust-to-C API returning an owned byte buffer. Explain how C learns its length and releases it without guessing Rust's allocator or Vec capacity.",
+    "solution": "Expose an opaque allocation handle with data pointer and length, plus a Rust-provided destroy function that consumes the handle exactly once. Keep allocation metadata on the Rust side. Specify pointer validity and prevent use after destruction; C must not call free on an arbitrary Rust allocation.",
+    "hints": [
+      "Allocation and deallocation must agree.",
+      "Returning only pointer and length can lose allocator metadata."
+    ],
+    "rubric": [
+      "Specify an ownership transfer.",
+      "Provide matching destruction.",
+      "Prevent double-free and stale access."
+    ],
+    "followUp": "How would you represent failure without unwinding through the C boundary?",
+    "references": [
+      {
+        "title": "Rustonomicon · FFI",
+        "url": "https://doc.rust-lang.org/nomicon/ffi.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-iterator-borrow",
+    "topic": "rust",
+    "title": "An iterator keeps its input borrowed",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Iterators",
+      "Borrowing"
+    ],
+    "prompt": "A function creates `let iter = values.iter();`, pushes to values, then consumes iter. Why is the mutation rejected, and what are two repairs with different costs?",
+    "solution": "iter retains a shared borrow used by later consumption, while push needs a conflicting mutable borrow and may reallocate. Consume the iterator before mutation, or collect independent owned results before mutating. Cloning the vector is another repair but adds allocation and copying.",
+    "hints": [
+      "The iterator is used after push.",
+      "Consider reordering before copying."
+    ],
+    "rubric": [
+      "Identify the overlapping borrows.",
+      "Explain reallocation risk.",
+      "Compare reordering with owned data."
+    ],
+    "followUp": "Would values.iter().cloned() alone release the borrow immediately?",
+    "references": [
+      {
+        "title": "The Rust Programming Language",
+        "url": "https://doc.rust-lang.org/book/"
+      }
+    ]
+  },
+  {
+    "id": "rust-atomic-cas",
+    "topic": "rust",
+    "title": "A failed compare is still a read",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Atomics",
+      "Compare exchange"
+    ],
+    "prompt": "Explain success and failure orderings in compare_exchange. Why must a failure ordering not claim release behavior?",
+    "solution": "On success compare_exchange performs a read-modify-write with the success ordering. On failure it only loads the actual value, using the failure ordering; there is no write to release. Choose acquire on failure only when the observed value must synchronize with a publication, and retry using that actual value when appropriate.",
+    "hints": [
+      "List operations on each outcome.",
+      "Release orders preceding work before a write."
+    ],
+    "rubric": [
+      "Separate successful RMW from failed load.",
+      "Reject release on failure.",
+      "Justify ordering from publication needs."
+    ],
+    "followUp": "Why can compare_exchange_weak require retry even when the expected value matches?",
+    "references": [
+      {
+        "title": "Rust standard library · compare_exchange",
+        "url": "https://doc.rust-lang.org/std/sync/atomic/struct.AtomicUsize.html#method.compare_exchange"
+      }
+    ]
+  },
+  {
+    "id": "rust-bounded-channel",
+    "topic": "rust",
+    "title": "Backpressure must include shutdown",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Channels",
+      "Backpressure"
+    ],
+    "prompt": "Design a bounded producer-consumer pipeline in Rust. Specify what happens when the queue fills, a receiver exits, or shutdown arrives while a producer is blocked.",
+    "solution": "Choose a finite capacity and a documented block, reject, or drop policy. Use channel disconnection and a cancellation-aware wait mechanism so producers can stop when consumers leave. Stop intake, decide whether to drain queued work, and join workers; a bounded queue alone does not make shutdown responsive.",
+    "hints": [
+      "Capacity limits queued items only.",
+      "A blocked sender must observe termination."
+    ],
+    "rubric": [
+      "Bound memory and define overload policy.",
+      "Handle disconnection and cancellation.",
+      "Specify draining and worker joining."
+    ],
+    "followUp": "How would you bound bytes when item sizes vary?",
+    "references": [
+      {
+        "title": "Rust standard library · bounded channels",
+        "url": "https://doc.rust-lang.org/std/sync/mpsc/fn.sync_channel.html"
+      }
+    ]
+  },
+  {
+    "id": "rust-async-lock",
+    "topic": "rust",
+    "title": "A guard crosses an await",
+    "difficulty": "Expert",
+    "format": "debug",
+    "minutes": 18,
+    "tags": [
+      "Async",
+      "Deadlocks"
+    ],
+    "prompt": "A single-thread executor runs two tasks. One holds a synchronous mutex across await; another blocks trying to acquire it. Explain the deadlock and repair choices.",
+    "solution": "The blocking lock call stops the executor thread, preventing the suspended owner from being polled and releasing the guard. Shorten the critical section before await, route ownership through a task and messages, or use an async mutex when holding a lock across suspension is truly required. Preserve invariants across any split operation.",
+    "hints": [
+      "The executor has only one thread.",
+      "The owner needs that same thread to resume."
+    ],
+    "rubric": [
+      "Trace the scheduling cycle.",
+      "Remove blocking acquisition from the executor.",
+      "Preserve state invariants during the repair."
+    ],
+    "followUp": "Can an async mutex still produce a logical deadlock?",
+    "references": [
+      {
+        "title": "Tokio tutorial · shared state",
+        "url": "https://tokio.rs/tokio/tutorial/shared-state"
+      }
+    ]
+  },
+  {
+    "id": "rust-arena-lifetime",
+    "topic": "rust",
+    "title": "Allocation speed does not erase destruction",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Arenas",
+      "Lifetimes"
+    ],
+    "prompt": "Design a request-scoped arena for parsed records referenced by later processing. Explain escape prevention, destruction of resource-owning values, and the boundary for returning results.",
+    "solution": "Tie record references to the arena borrow so they cannot outlive the request. Choose an arena whose destructor policy matches stored values; reclaiming raw storage does not necessarily run each value's Drop. Copy or move final results into independently owned storage before releasing the arena.",
+    "hints": [
+      "Storage lifetime and destructor execution differ.",
+      "Returned borrowed data needs a surviving owner."
+    ],
+    "rubric": [
+      "Tie references to arena lifetime.",
+      "Account for Drop requirements.",
+      "Define an owned output boundary."
+    ],
+    "followUp": "When is an index into an owned arena preferable to a self-referential struct?",
+    "references": [
+      {
+        "title": "bumpalo · arena allocation and Drop",
+        "url": "https://docs.rs/bumpalo/latest/bumpalo/"
+      }
+    ]
+  },
+  {
+    "id": "rust-loom-test",
+    "topic": "rust",
+    "title": "A passing stress test is not a proof",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Concurrency",
+      "Testing"
+    ],
+    "prompt": "You wrote a small atomic state machine that passes millions of stress iterations. Design a stronger validation strategy and state what remains outside the evidence.",
+    "solution": "Write explicit ownership and happens-before invariants, then model small thread counts and bounded executions with a concurrency exploration tool such as Loom. Include failure and reuse transitions. Exploration increases schedule coverage but is bounded and depends on faithfully modeled operations; retain review of unsafe invariants and platform assumptions.",
+    "hints": [
+      "Rare interleavings may never occur in stress runs.",
+      "A model omits behavior unless you represent it."
+    ],
+    "rubric": [
+      "State the invariants.",
+      "Explore bounded interleavings.",
+      "Describe modeling and coverage limits."
+    ],
+    "followUp": "Which two-thread counterexample would you try to minimize first?",
+    "references": [
+      {
+        "title": "Loom · concurrency exploration and limits",
+        "url": "https://docs.rs/loom/latest/loom/"
+      }
+    ]
+  }
+]

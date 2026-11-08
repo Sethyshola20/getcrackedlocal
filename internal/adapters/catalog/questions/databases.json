@@ -1,0 +1,931 @@
+[
+  {
+    "id": "databases-index",
+    "topic": "databases",
+    "title": "The index has a left edge",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "B-trees",
+      "Composite indexes"
+    ],
+    "prompt": "A table has a B-tree index on `(tenant_id, created_at)`. Which query most directly uses a contiguous leading-prefix range of that index to find one tenant’s recent rows in timestamp order? Assume no other indexes or optimizer-specific skip-scan tricks.",
+    "solution": "An equality condition on tenant_id followed by a range on created_at matches the index’s lexicographic ordering. Within one tenant’s contiguous region, timestamps are ordered, so the database can seek to the start of the range and scan forward, subject to the query’s exact ordering and selected columns.\n\nFiltering only created_at does not identify one contiguous leading-prefix interval across all tenants in this model. An index may still be scanned or used in other ways, but that is different from the direct seek-and-range pattern asked here. Covering behavior depends on which columns the query needs.",
+    "rubric": [
+      "Use equality on the leading index column.",
+      "Use the second column for a range within that tenant.",
+      "Distinguish a direct range seek from scanning or optimizer-specific alternatives."
+    ],
+    "hints": [
+      "Composite B-trees are ordered lexicographically.",
+      "Imagine rows grouped first by tenant and then by time."
+    ],
+    "followUp": "What index would you consider for a global newest-events feed across every tenant?",
+    "references": [
+      {
+        "title": "SQLite · query planner and multi-column indexes",
+        "url": "https://www.sqlite.org/queryplanner.html"
+      }
+    ],
+    "options": [
+      "WHERE created_at > ? ORDER BY created_at",
+      "WHERE tenant_id = ? AND created_at > ? ORDER BY created_at",
+      "WHERE payload LIKE '%error%'",
+      "WHERE created_at = ? ORDER BY tenant_id DESC"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "databases-wal",
+    "topic": "databases",
+    "title": "The log must arrive before the page",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 10,
+    "tags": [
+      "WAL",
+      "Crash recovery",
+      "Durability"
+    ],
+    "prompt": "Explain the write-ahead logging rule for a database that updates cached data pages. Why must relevant log records reach durable storage before a dirty page containing those changes is persisted? Distinguish that rule from the condition for acknowledging a durable transaction commit. Include what recovery does with committed and incomplete transactions.",
+    "solution": "The log must contain enough durable recovery information before the corresponding modified data page can reach stable storage. Otherwise a crash could leave a changed page without a durable account of how to recover it. This is the write-ahead rule; it constrains flush ordering, not necessarily immediate data-page flushing on every write.\n\nAcknowledging a durable commit generally requires the transaction’s commit decision and required log records to be durably persisted under the configured durability contract. Data pages can be written later. Recovery redoes committed changes as required and handles incomplete work according to the engine’s architecture: some engines undo, while others ignore uncommitted log tails or versions. SQLite WAL uses a specific commit/checkpoint protocol, so do not project a generic undo/redo design onto every database.",
+    "rubric": [
+      "Order recovery log persistence before dependent dirty-page persistence.",
+      "Separate WAL ordering from durable commit acknowledgment.",
+      "Explain redo/incomplete-transaction behavior without assuming every engine uses undo."
+    ],
+    "hints": [
+      "After a crash, the database has only the bytes that actually reached stable storage.",
+      "Commit need not force every changed data page to disk."
+    ],
+    "followUp": "How does group commit improve throughput while preserving a durable acknowledgment contract?",
+    "references": [
+      {
+        "title": "SQLite · write-ahead logging",
+        "url": "https://www.sqlite.org/wal.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-write-skew",
+    "topic": "databases",
+    "title": "No row conflict, broken invariant",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Snapshot isolation",
+      "Write skew"
+    ],
+    "prompt": "Two doctors are on call. The invariant is that at least one remains on call. Under snapshot isolation, two transactions each read that both are on call, then each updates only its own row to go off call. Both commit because they modify different rows. Explain the anomaly and offer a concurrency-safe repair. A unique constraint on doctor_id is already present.",
+    "solution": "This is write skew. Both decisions use a snapshot in which the other doctor remains available, and the transactions write disjoint rows, so ordinary same-row write-conflict detection does not necessarily reject either. The final state violates an invariant over a set of rows.\n\nUse a serializable execution strategy with appropriate conflict detection/retries, or explicitly serialize the decision by locking a shared coordination row or all relevant rows before checking and updating under a suitable isolation contract. Recheck the invariant inside that protected transaction. The existing unique constraint only prevents duplicate doctor identities; it cannot express the at-least-one-across-rows condition. A correct repair must include the retry/error path and avoid an unprotected pre-check outside the transaction.",
+    "rubric": [
+      "Identify snapshot-based write skew on disjoint rows.",
+      "Connect the anomaly to the cross-row invariant.",
+      "Offer serializable retries or a correctly scoped shared lock.",
+      "Explain why the existing unique constraint and external pre-check are insufficient."
+    ],
+    "hints": [
+      "The transactions do not need to overwrite the same row to violate a shared rule.",
+      "What single resource could force both decisions into one order?"
+    ],
+    "followUp": "Why might SELECT FOR UPDATE on only the current doctor’s row fail to repair the invariant?",
+    "references": [
+      {
+        "title": "PostgreSQL · transaction isolation",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-tombstone",
+    "topic": "databases",
+    "title": "Deleting a value without resurrecting it",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 13,
+    "tags": [
+      "LSM trees",
+      "Compaction",
+      "Tombstones"
+    ],
+    "prompt": "An LSM database records a delete as a tombstone in a newer sorted run while an older run still contains the value. Explain why dropping the tombstone during an arbitrary compaction can resurrect the deleted value. State the information needed before it can be discarded, and how snapshots and replication complicate the decision.",
+    "solution": "Reads merge versions across runs. The newer tombstone hides an older value. If a compaction drops the tombstone without also proving that no older visible version remains in any overlapping source, a later read may discover the old value and return it again. A delete marker is live semantic information until the shadowed history is safely irrelevant.\n\nSafe removal depends on compaction coverage, key/version bounds, and the oldest snapshot that must remain readable. Older snapshots may still require prior versions. Replicated systems add repair and lag constraints: a stale replica can reintroduce a value if deletion history is discarded before convergence is guaranteed. The precise grace/repair policy is engine-specific. Measure tombstone accumulation and read amplification, but do not trade correctness for smaller files by using an arbitrary age threshold alone.",
+    "rubric": [
+      "Explain merge precedence and resurrection after premature tombstone removal.",
+      "Require proof about all older overlapping versions.",
+      "Account for snapshot visibility and replica/repair lag."
+    ],
+    "hints": [
+      "A tombstone hides history that may still exist elsewhere.",
+      "Compacting two files does not necessarily include every file containing the key."
+    ],
+    "followUp": "How do bottommost-level compactions make tombstone removal easier to prove?",
+    "references": [
+      {
+        "title": "RocksDB · compaction",
+        "url": "https://github.com/facebook/rocksdb/wiki/Compaction"
+      }
+    ]
+  },
+  {
+    "id": "databases-sqlite-writer",
+    "topic": "databases",
+    "title": "WAL did not give you many writers",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "SQLite",
+      "WAL",
+      "Transactions"
+    ],
+    "prompt": "A SQLite service enables WAL and opens 30 database connections. Reads remain fast, but bursts of writes produce SQLITE_BUSY and long tails. Some transactions hold a write lock while performing network calls. Explain WAL’s concurrency contract and propose a repair involving transaction scope, writer coordination, busy handling, and checkpoint observability.",
+    "solution": "SQLite WAL allows readers and a writer to overlap in many cases, but it still has one writer at a time. Opening more connections does not create concurrent write capacity. Holding a write transaction across network I/O extends the serialization point and amplifies queueing. A busy timeout can wait for contention, but it does not add throughput and can worsen tails.\n\nKeep write transactions short, move network work outside the locked interval with a sound state protocol, and consider a bounded writer queue or intentional connection limit for write-heavy local services. Classify busy outcomes carefully: some read-to-write upgrade conflicts require restarting the transaction rather than blindly retrying one statement. Observe write duration, queue age, WAL size, checkpoint progress, and long-lived readers that prevent checkpoint advancement. Load-test with realistic write bursts.",
+    "rubric": [
+      "State the single-writer constraint despite WAL and many connections.",
+      "Remove unbounded/network waits from write transactions.",
+      "Bound coordination and distinguish waitable contention from transaction restart.",
+      "Observe checkpoint/WAL growth and long reader lifetimes."
+    ],
+    "hints": [
+      "WAL improves reader/writer overlap, not the number of simultaneous writers.",
+      "A 200 ms network call can turn a 1 ms write into a 201 ms serialized operation."
+    ],
+    "followUp": "Why can a long-lived read transaction cause the WAL file to grow even when writes keep succeeding?",
+    "references": [
+      {
+        "title": "SQLite · WAL concurrency",
+        "url": "https://www.sqlite.org/wal.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-outbox",
+    "topic": "databases",
+    "title": "One transaction, two systems",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 20,
+    "tags": [
+      "Outbox",
+      "CDC",
+      "Delivery semantics"
+    ],
+    "prompt": "An order service must commit an order in SQLite and publish an OrderCreated event to a broker. A process can crash between any two steps. Design a transactional outbox. Explain atomic persistence, dispatcher concurrency, duplicate delivery, consumer deduplication, ordering scope, retention, and how to observe events that are committed but not yet delivered.",
+    "solution": "Insert the order and an outbox row with a stable event ID in the same database transaction. A dispatcher reads committed outbox entries and publishes them, then marks delivery according to an explicit acknowledgment protocol. A crash after broker acceptance but before marking delivered can cause a duplicate; marking first can lose the event. The basic pattern therefore provides recoverable at-least-once delivery, not magical exactly-once across systems.\n\nUse leases/claims or a bounded single dispatcher to coordinate publishers, while retaining stable event identities across retries. Consumers deduplicate atomically with their business effects where possible. Define ordering per aggregate or partition with sequence numbers rather than claiming global order from concurrent dispatchers. Retain data for replay/audit and track oldest pending age, retry counts, failures, and backlog. A poison event needs an explicit escalation/quarantine path that does not silently discard business state.",
+    "rubric": [
+      "Commit business state and outbox entry atomically.",
+      "Explain the publish-before-mark crash and at-least-once duplicate semantics.",
+      "Coordinate dispatchers and deduplicate consumer effects with stable identities.",
+      "Define ordering, retention, poison handling, and lag observability."
+    ],
+    "hints": [
+      "There is no ordinary SQLite transaction that atomically commits an unrelated broker acknowledgment.",
+      "The gap after publish and before marking success cannot be wished away."
+    ],
+    "followUp": "How would the dispatcher preserve per-order ordering while publishing different orders in parallel?",
+    "references": [
+      {
+        "title": "Debezium · outbox event router",
+        "url": "https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-acid-scope",
+    "topic": "databases",
+    "title": "Atomicity belongs to a transaction boundary",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Transactions",
+      "ACID"
+    ],
+    "prompt": "A transaction updates two account rows. Explain what atomicity promises on failure and why it does not automatically include an email sent halfway through the transaction.",
+    "solution": "Atomicity makes the database transaction's changes commit together or roll back together. An external email is not part of that database transaction and cannot be unsent by rollback. Coordinate external effects through an explicit reliable workflow or transactional outbox rather than assuming ACID crosses unrelated systems.",
+    "hints": [
+      "Identify which resource participates in commit.",
+      "An external observer may see the email immediately."
+    ],
+    "rubric": [
+      "Define all-or-nothing database changes.",
+      "Exclude uncoordinated external effects.",
+      "Propose explicit reliable coordination."
+    ],
+    "followUp": "Why should an outbox consumer still tolerate duplicate delivery?",
+    "references": [
+      {
+        "title": "PostgreSQL · tutorial-transactions",
+        "url": "https://www.postgresql.org/docs/current/tutorial-transactions.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-null-comparison",
+    "topic": "databases",
+    "title": "Unknown is not true",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "SQL",
+      "NULL"
+    ],
+    "prompt": "In ordinary SQL three-valued logic, which predicate selects rows whose nullable column x is NULL?",
+    "solution": "`x IS NULL` tests nullness. `x = NULL` evaluates to unknown rather than true, so WHERE does not select those rows. NULL represents missing or unknown information and has special logic, not the equality behavior of an ordinary sentinel value.",
+    "hints": [
+      "WHERE keeps true predicates.",
+      "Equality with NULL is not a nullness test."
+    ],
+    "rubric": [
+      "Choose IS NULL.",
+      "Explain unknown.",
+      "Relate three-valued logic to filtering."
+    ],
+    "followUp": "How can NOT IN behave unexpectedly when its subquery contains NULL?",
+    "references": [
+      {
+        "title": "PostgreSQL · functions-comparison",
+        "url": "https://www.postgresql.org/docs/current/functions-comparison.html"
+      }
+    ],
+    "options": [
+      "x = NULL",
+      "x != NULL",
+      "x IS NULL",
+      "x = 0"
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "databases-index-cost",
+    "topic": "databases",
+    "title": "Every secondary index joins the write path",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Indexes",
+      "Write amplification"
+    ],
+    "prompt": "Why can adding an index speed up selected reads while slowing inserts and increasing storage use?",
+    "solution": "The database must maintain another search structure and its associated pages or records as data changes. This adds writes, logging, cache pressure, and storage, although the exact cost depends on the engine and index. Choose indexes from measured access patterns rather than indexing every column automatically.",
+    "hints": [
+      "An index contains derived state that must stay consistent.",
+      "Reads and writes have different needs."
+    ],
+    "rubric": [
+      "Explain faster targeted lookup.",
+      "Account for maintenance and storage.",
+      "Choose indexes from workload evidence."
+    ],
+    "followUp": "Why can a covering index trade larger entries for fewer table reads?",
+    "references": [
+      {
+        "title": "PostgreSQL · indexes",
+        "url": "https://www.postgresql.org/docs/current/indexes.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-join-cardinality",
+    "topic": "databases",
+    "title": "One-to-many joins multiply rows",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "SQL",
+      "Joins"
+    ],
+    "prompt": "Three customers each have exactly four orders. An inner join on customer ID returns how many rows, assuming no other matches or filters?",
+    "solution": "12 rows, from 3×4. A join returns matched row combinations, not one row per customer. Aggregation or a semijoin-style existence query is needed when the desired result is customer-level rather than order-level.",
+    "hints": [
+      "Count matches for each customer.",
+      "A join does not deduplicate customer rows automatically."
+    ],
+    "rubric": [
+      "Compute twelve rows.",
+      "Explain one-to-many expansion.",
+      "Distinguish join output from customer-level aggregation."
+    ],
+    "followUp": "How would customers with no orders affect a left join count?",
+    "references": [
+      {
+        "title": "PostgreSQL · queries-table-expressions",
+        "url": "https://www.postgresql.org/docs/current/queries-table-expressions.html"
+      }
+    ],
+    "expected": "12"
+  },
+  {
+    "id": "databases-unique-constraint",
+    "topic": "databases",
+    "title": "Enforce uniqueness where writes converge",
+    "difficulty": "Foundation",
+    "format": "debug",
+    "minutes": 5,
+    "tags": [
+      "Constraints",
+      "Concurrency"
+    ],
+    "prompt": "Two concurrent requests both check that a username is unused, then insert it. Explain why an application precheck alone is insufficient and how the database should help.",
+    "solution": "Both checks can observe absence before either insert commits. Enforce the intended uniqueness with a database constraint and handle the losing insert's conflict. Keep normalization and tenant scope consistent with the constraint; a precheck can improve feedback but cannot replace atomic enforcement.",
+    "hints": [
+      "The check and insert can interleave.",
+      "The shared authority must reject the conflict."
+    ],
+    "rubric": [
+      "Trace the race.",
+      "Add correctly scoped database uniqueness.",
+      "Handle conflicts and normalization."
+    ],
+    "followUp": "What changes when usernames are case-insensitive?",
+    "references": [
+      {
+        "title": "PostgreSQL · ddl-constraints",
+        "url": "https://www.postgresql.org/docs/current/ddl-constraints.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-count-null",
+    "topic": "databases",
+    "title": "COUNT has two common meanings",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "SQL",
+      "Aggregation"
+    ],
+    "prompt": "A table has five rows and column x is NULL in two of them. What does COUNT(x) return, without grouping or filtering?",
+    "solution": "3, because COUNT(x) counts non-NULL values. COUNT(*) would return all five rows. This difference matters when outer joins introduce NULL placeholders or when a nullable field is used as a proxy for row existence.",
+    "hints": [
+      "Ignore NULL values for COUNT(x).",
+      "COUNT(*) follows a different rule."
+    ],
+    "rubric": [
+      "Compute three.",
+      "Distinguish COUNT(x) from COUNT(*).",
+      "Recognize nullable-count pitfalls."
+    ],
+    "followUp": "Why should a non-null key often be used when counting matched right-side rows?",
+    "references": [
+      {
+        "title": "PostgreSQL · functions-aggregate",
+        "url": "https://www.postgresql.org/docs/current/functions-aggregate.html"
+      }
+    ],
+    "expected": "3"
+  },
+  {
+    "id": "databases-btree-fanout",
+    "topic": "databases",
+    "title": "Estimate levels with a toy full tree",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "B-trees",
+      "Indexes"
+    ],
+    "prompt": "A toy perfectly full index has fanout 100 at each internal node and 100 records per leaf. A root directly above leaves covers 10,000 records. How many internal levels are needed to cover 1,000,000 records, excluding the leaf level?",
+    "solution": "2 internal levels: the root reaches 100 internal children, each reaching 100 leaves, each holding 100 records, for 100^3=1,000,000. Real trees have partial occupancy and variable entry sizes; this is an explicit idealized capacity model.",
+    "hints": [
+      "The leaf capacity contributes another factor of one hundred.",
+      "Count internal levels separately from leaves."
+    ],
+    "rubric": [
+      "Derive 100×100×100 capacity.",
+      "Count two internal levels.",
+      "State full-occupancy assumptions."
+    ],
+    "followUp": "How would lower average occupancy affect height or page count?",
+    "references": [
+      {
+        "title": "PostgreSQL · btree",
+        "url": "https://www.postgresql.org/docs/current/btree.html"
+      }
+    ],
+    "expected": "2"
+  },
+  {
+    "id": "databases-explain-estimate",
+    "topic": "databases",
+    "title": "An estimate is not an observed row count",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Query planning",
+      "Statistics"
+    ],
+    "prompt": "A query planner estimates 10 rows from a filter but execution returns 1 million. Explain why that can produce a bad plan and what to inspect.",
+    "solution": "Cardinality estimates influence join order, access paths, and resource choices. Stale statistics, correlated columns, skew, or parameter-sensitive distributions can cause severe errors. Compare estimated and actual rows at each plan node, inspect representative values, and update or improve statistics before assuming an index alone fixes the issue.",
+    "hints": [
+      "Find the earliest large estimation error.",
+      "Independent selectivity assumptions can miss correlations."
+    ],
+    "rubric": [
+      "Relate estimates to plan choices.",
+      "Identify plausible statistical causes.",
+      "Compare plan-node estimates with actuals."
+    ],
+    "followUp": "Why can one average distribution fail for a highly skewed tenant key?",
+    "references": [
+      {
+        "title": "PostgreSQL · using-explain",
+        "url": "https://www.postgresql.org/docs/current/using-explain.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-keyset-page",
+    "topic": "databases",
+    "title": "Resume from a stable ordering key",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Pagination",
+      "Indexes"
+    ],
+    "prompt": "Design pagination over a large events table ordered by created_at then unique ID. Avoid large OFFSET scans and explain concurrent insert behavior.",
+    "solution": "Use a seek predicate on the last seen (created_at, id) tuple with a matching ordered index and stable tie-breaking. This avoids repeatedly skipping earlier rows. Define snapshot or live-feed semantics for concurrent changes; keyset pagination does not by itself freeze the dataset or prevent changes to ordering columns.",
+    "hints": [
+      "Timestamps can tie.",
+      "A cursor needs the full ordering boundary."
+    ],
+    "rubric": [
+      "Use a tuple cursor and matching index.",
+      "Include a unique tiebreaker.",
+      "Define concurrency and mutation semantics."
+    ],
+    "followUp": "What should a descending-order predicate look like relative to the last seen tuple?",
+    "references": [
+      {
+        "title": "PostgreSQL · indexes-ordering",
+        "url": "https://www.postgresql.org/docs/current/indexes-ordering.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-foreign-key",
+    "topic": "databases",
+    "title": "A relationship needs an enforcement boundary",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Constraints",
+      "Foreign keys"
+    ],
+    "prompt": "Explain what a foreign key can guarantee between orders and customers, and what application rules it does not automatically express.",
+    "solution": "It enforces the configured relationship between referenced and referencing keys under the database's timing and action rules. It does not automatically enforce business conditions such as an active subscription, credit limit, or cross-service state. Choose delete and update actions deliberately and verify enforcement is enabled in the actual engine.",
+    "hints": [
+      "Referential existence is narrower than business validity.",
+      "Cascade behavior is a separate choice."
+    ],
+    "rubric": [
+      "Explain referential integrity.",
+      "Define delete/update behavior.",
+      "Distinguish additional business rules and configuration."
+    ],
+    "followUp": "Why might cascading deletion be inappropriate for immutable audit records?",
+    "references": [
+      {
+        "title": "PostgreSQL · ddl-constraints",
+        "url": "https://www.postgresql.org/docs/current/ddl-constraints.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-lock-order",
+    "topic": "databases",
+    "title": "Two valid transactions can deadlock",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Locks",
+      "Deadlocks"
+    ],
+    "prompt": "Transaction A locks row 1 then requests row 2; B locks row 2 then requests row 1. Explain the deadlock and a robust application response.",
+    "solution": "Each waits for a resource held by the other, forming a cycle. Use a consistent lock order when possible, keep transactions short, and handle the database's deadlock victim error by retrying the whole logical transaction with bounded policy. Retrying only the failed statement may not restore the intended transaction state.",
+    "hints": [
+      "Draw the wait-for cycle.",
+      "Recovery can abort an entire transaction."
+    ],
+    "rubric": [
+      "Identify the cycle.",
+      "Establish consistent ordering.",
+      "Retry the appropriate transaction boundary safely."
+    ],
+    "followUp": "Why should retries avoid repeating an uncoordinated external side effect?",
+    "references": [
+      {
+        "title": "PostgreSQL · explicit-locking",
+        "url": "https://www.postgresql.org/docs/current/explicit-locking.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-read-committed",
+    "topic": "databases",
+    "title": "Two statements can see different committed worlds",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Isolation",
+      "PostgreSQL"
+    ],
+    "prompt": "In PostgreSQL Read Committed, why can two SELECT statements in one transaction observe different committed values when another transaction commits between them?",
+    "solution": "Each statement obtains a snapshot of committed data as of that statement's start, rather than one immutable transaction-wide snapshot. The later statement can therefore see newly committed changes. Use an appropriate stronger isolation level or explicit locking when the invariant requires it, accounting for the stronger mode's retry behavior.",
+    "hints": [
+      "Snapshot scope is per statement here.",
+      "Being in one transaction does not imply one snapshot at every level."
+    ],
+    "rubric": [
+      "Explain statement snapshots.",
+      "Show visibility of intervening commits.",
+      "Match isolation or locking to invariants."
+    ],
+    "followUp": "How does PostgreSQL Repeatable Read change ordinary snapshot reads?",
+    "references": [
+      {
+        "title": "PostgreSQL · transaction-iso",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-covering-index",
+    "topic": "databases",
+    "title": "The index may contain the requested columns",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Indexes",
+      "Query plans"
+    ],
+    "prompt": "A query filters on account_id and returns only account_id and created_at. Explain how a suitable covering index can reduce table lookups and what it costs.",
+    "solution": "An index containing the filtering and returned fields can satisfy the query without fetching separate table rows when the engine's rules permit it. The benefit depends on the plan and visibility semantics. Wider entries increase storage, cache footprint, and write maintenance, so verify the actual execution path and workload tradeoff.",
+    "hints": [
+      "Separate locating a row from fetching its payload.",
+      "Added columns make every index entry wider."
+    ],
+    "rubric": [
+      "Explain coverage.",
+      "Verify engine and plan behavior.",
+      "Account for width and maintenance costs."
+    ],
+    "followUp": "Why can an engine's visibility checks limit index-only scans?",
+    "references": [
+      {
+        "title": "SQLite query planning",
+        "url": "https://www.sqlite.org/queryplanner.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-pool-queue",
+    "topic": "databases",
+    "title": "More connections can create more contention",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Connection pools",
+      "Overload"
+    ],
+    "prompt": "A database slows down, so an application doubles its connection pool. Why can latency get worse, and what should a sizing experiment measure?",
+    "solution": "More concurrent work can increase lock contention, memory use, I/O pressure, and queueing inside the database without adding service capacity. Measure application pool wait separately from query execution, database utilization, throughput, and tails. Bound admission and choose a pool size near sustainable concurrency rather than hiding overload behind more sessions.",
+    "hints": [
+      "Connections admit work; they do not create disk bandwidth.",
+      "Queueing can move between layers."
+    ],
+    "rubric": [
+      "Explain added contention.",
+      "Separate pool wait and database time.",
+      "Tune against sustainable throughput and tails."
+    ],
+    "followUp": "What happens when every application replica independently increases its pool?",
+    "references": [
+      {
+        "title": "PostgreSQL · runtime-config-connection",
+        "url": "https://www.postgresql.org/docs/current/runtime-config-connection.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-mvcc-vacuum",
+    "topic": "databases",
+    "title": "An old snapshot can retain old row versions",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "MVCC",
+      "Vacuum"
+    ],
+    "prompt": "A PostgreSQL database accumulates dead tuples despite regular vacuum runs while a long-lived transaction remains open. Explain the relationship and a repair.",
+    "solution": "MVCC must retain versions still potentially visible to active snapshots. An old transaction can prevent cleanup from advancing, increasing table or index bloat and I/O. Inspect transaction age and snapshot holders, shorten transaction lifetimes, and monitor cleanup; more frequent vacuum alone cannot remove versions that remain required.",
+    "hints": [
+      "Visibility governs when versions become reclaimable.",
+      "An idle transaction can still hold a snapshot."
+    ],
+    "rubric": [
+      "Explain version retention.",
+      "Find old snapshot holders.",
+      "Shorten transactions and verify cleanup progress."
+    ],
+    "followUp": "Why can abandoned read-only sessions still harm maintenance?",
+    "references": [
+      {
+        "title": "PostgreSQL · routine-vacuuming",
+        "url": "https://www.postgresql.org/docs/current/routine-vacuuming.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-lsm-amplification",
+    "topic": "databases",
+    "title": "A cheap insert can create later rewrite work",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "LSM trees",
+      "Compaction"
+    ],
+    "prompt": "Explain write amplification in an LSM-style storage engine and why a benchmark measuring only initial flush speed can be misleading.",
+    "solution": "Data can be written to a log, flushed to sorted files, and rewritten during compaction. Background merging consumes bandwidth and can change read amplification and space use. A short test may accumulate compaction debt that later stalls writes, so measure sustained load, pending work, and tail latency across steady-state cycles.",
+    "hints": [
+      "The first durable write is not the final physical write.",
+      "Background debt can grow during a short benchmark."
+    ],
+    "rubric": [
+      "Account for log, flush, and compaction.",
+      "Explain deferred debt.",
+      "Measure sustained behavior and read/space tradeoffs."
+    ],
+    "followUp": "How does compaction strategy change the write-versus-read tradeoff?",
+    "references": [
+      {
+        "title": "RocksDB · compaction",
+        "url": "https://github.com/facebook/rocksdb/wiki/Compaction"
+      }
+    ]
+  },
+  {
+    "id": "databases-write-amplification",
+    "topic": "databases",
+    "title": "Physical bytes exceed logical bytes",
+    "difficulty": "Advanced",
+    "format": "numeric",
+    "minutes": 12,
+    "tags": [
+      "Storage",
+      "Write amplification"
+    ],
+    "prompt": "A storage workload accepts 2 GiB of logical user updates and writes 12 GiB to storage over the same accounted interval. What is its write amplification factor?",
+    "solution": "6×, from 12/2. The accounting boundary must specify whether logs, metadata, compaction, replication, and device-internal writes are included. Compare like-for-like intervals and steady-state workloads rather than mixing logical and physical counters from different layers.",
+    "hints": [
+      "Divide physical writes by logical writes.",
+      "Keep the accounting boundary explicit."
+    ],
+    "rubric": [
+      "Compute six.",
+      "Match units and time interval.",
+      "State included storage layers."
+    ],
+    "followUp": "How could delayed compaction distort a short measurement window?",
+    "references": [
+      {
+        "title": "RocksDB · tuning write amplification",
+        "url": "https://github.com/facebook/rocksdb/wiki/RocksDB-Tuning-Guide"
+      }
+    ],
+    "expected": "6"
+  },
+  {
+    "id": "databases-serializable-retry",
+    "topic": "databases",
+    "title": "A correct isolation level can reject work",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Serializable",
+      "Retries"
+    ],
+    "prompt": "Why can a serializable transaction fail under concurrency even when each SQL statement is individually valid, and how should callers respond?",
+    "solution": "The database may detect that concurrent dependencies cannot safely be committed as a serial execution and abort a transaction. Retry the complete logical transaction using a fresh snapshot and bounded policy, without duplicating external effects. Serializable preserves a consistency property by rejecting some executions; it does not promise every attempt commits.",
+    "hints": [
+      "Validity of statements differs from a safe concurrent history.",
+      "A retry needs a new transaction view."
+    ],
+    "rubric": [
+      "Explain serialization failure.",
+      "Retry the full transaction safely.",
+      "Bound effort and handle external effects."
+    ],
+    "followUp": "Why can a read-only transaction still participate in dangerous dependency patterns?",
+    "references": [
+      {
+        "title": "PostgreSQL · transaction-iso",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-online-migration",
+    "topic": "databases",
+    "title": "A column rename can break a mixed deployment",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Schema migrations",
+      "Compatibility"
+    ],
+    "prompt": "Design a schema change while old and new application versions run simultaneously. Use an expand-and-contract approach.",
+    "solution": "Add compatible schema first, deploy code that tolerates both representations, and backfill with bounded restartable work. Switch reads and writes under an explicit consistency plan, verify adoption, then remove old fields only after old clients are gone. Include locking behavior and rollback limits; a single destructive rename can break running binaries.",
+    "hints": [
+      "Different application versions overlap in time.",
+      "Backfills compete with foreground work."
+    ],
+    "rubric": [
+      "Expand compatibly.",
+      "Backfill and switch with verified consistency.",
+      "Contract only after compatibility and rollback checks."
+    ],
+    "followUp": "How would you prevent dual writes from diverging during the transition?",
+    "references": [
+      {
+        "title": "PostgreSQL · ddl-alter",
+        "url": "https://www.postgresql.org/docs/current/ddl-alter.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-replica-lag",
+    "topic": "databases",
+    "title": "A successful primary write can be absent on a replica",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Replication",
+      "Read consistency"
+    ],
+    "prompt": "A web application writes to a primary and immediately reads from an asynchronous replica. Design a policy for user-visible consistency and failover.",
+    "solution": "Use primary reads or a commit-position/session token that the selected replica must reach before serving the dependent read. Bound waiting and define fallback behavior. Separately specify failover durability: an asynchronous replica promoted before receiving acknowledged writes may lose them, so read-after-write routing does not alone solve recovery-point guarantees.",
+    "hints": [
+      "Visibility and failover durability are separate.",
+      "A token needs a comparable replication position."
+    ],
+    "rubric": [
+      "Guarantee dependent-read freshness.",
+      "Define wait and fallback.",
+      "State asynchronous failover loss assumptions."
+    ],
+    "followUp": "What should happen if the primary is unreachable and no replica has the session's commit?",
+    "references": [
+      {
+        "title": "PostgreSQL · warm-standby",
+        "url": "https://www.postgresql.org/docs/current/warm-standby.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-checkpoint-pressure",
+    "topic": "databases",
+    "title": "A long reader can hold back WAL recycling",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "SQLite",
+      "WAL"
+    ],
+    "prompt": "A SQLite WAL grows while writes continue and one read transaction stays open for hours. Explain why checkpointing may not reclaim all old WAL content.",
+    "solution": "A reader's snapshot can require older WAL frames, preventing checkpoint progress or reuse past the safe point. Inspect reader lifetime and checkpoint status, shorten transactions, and monitor WAL growth. Repeatedly forcing checkpoints does not remove the need to preserve an active reader's view and may add latency.",
+    "hints": [
+      "A live snapshot still needs its historical pages.",
+      "Checkpointing must respect readers."
+    ],
+    "rubric": [
+      "Explain the reader-held boundary.",
+      "Inspect reader and checkpoint state.",
+      "Shorten snapshots and monitor growth."
+    ],
+    "followUp": "How could streaming query results keep a read transaction open unexpectedly?",
+    "references": [
+      {
+        "title": "SQLite · WAL checkpointing",
+        "url": "https://www.sqlite.org/wal.html#checkpointing"
+      }
+    ]
+  },
+  {
+    "id": "databases-backup-restore",
+    "topic": "databases",
+    "title": "A backup is evidence only after restoration",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Backups",
+      "Recovery"
+    ],
+    "prompt": "Design a recovery drill for a transactional database with point-in-time recovery. What must be checked beyond whether the backup command exited successfully?",
+    "solution": "Restore a consistent base backup and required log chain into an isolated environment, replay to the chosen point, and verify application invariants and access. Measure data loss and restore time against objectives, including keys, credentials, versions, and external dependencies. A successful backup command does not prove a usable or sufficiently recent recovery state.",
+    "hints": [
+      "Recovery needs the whole log chain and configuration.",
+      "Application correctness must be checked after replay."
+    ],
+    "rubric": [
+      "Restore and replay independently.",
+      "Verify application invariants and dependencies.",
+      "Measure recovery point and time objectives."
+    ],
+    "followUp": "How would you detect a missing log segment before an emergency?",
+    "references": [
+      {
+        "title": "PostgreSQL · continuous-archiving",
+        "url": "https://www.postgresql.org/docs/current/continuous-archiving.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-cdc-boundary",
+    "topic": "databases",
+    "title": "A change feed needs a consistent starting point",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "CDC",
+      "Snapshots"
+    ],
+    "prompt": "Design initial loading plus change-data capture into a search index while source writes continue. Prevent gaps and tolerate duplicates.",
+    "solution": "Take a source-consistent snapshot tied to a known log position, then replay changes from the documented boundary with stable record keys and ordering rules. Persist target progress consistently with application, handle deletes and schema changes, and rebuild when history expires. Independent table scans followed by an arbitrary latest offset can miss concurrent changes.",
+    "hints": [
+      "Snapshot state and log position must correspond.",
+      "Repeated changes should not create duplicate documents."
+    ],
+    "rubric": [
+      "Tie snapshot to replay boundary.",
+      "Apply keyed idempotent ordered changes.",
+      "Handle deletes, schema evolution, and lost history."
+    ],
+    "followUp": "How would a target crash between indexing a batch and saving its offset be recovered?",
+    "references": [
+      {
+        "title": "PostgreSQL · logical-replication",
+        "url": "https://www.postgresql.org/docs/current/logical-replication.html"
+      }
+    ]
+  },
+  {
+    "id": "databases-cross-shard-invariant",
+    "topic": "databases",
+    "title": "A local transaction cannot see the whole constraint",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Sharding",
+      "Transactions"
+    ],
+    "prompt": "A uniqueness rule spans accounts on several database shards. Explain why one per-shard unique index is insufficient and compare enforcement strategies.",
+    "solution": "Each local index rejects duplicates only within its shard. Route the unique key through one authoritative partition, coordinate through a suitable distributed transaction or allocation service, or explicitly weaken the rule and reconcile conflicts. Define availability and failure handling; asynchronous duplicate detection is not equivalent to strict global uniqueness.",
+    "hints": [
+      "Find where concurrent conflicting writes converge.",
+      "Local atomicity has a local scope."
+    ],
+    "rubric": [
+      "Explain the per-shard gap.",
+      "Compare centralized or coordinated enforcement.",
+      "State consistency and availability tradeoffs."
+    ],
+    "followUp": "How can shard placement by the uniqueness key simplify enforcement?",
+    "references": [
+      {
+        "title": "PostgreSQL · ddl-constraints",
+        "url": "https://www.postgresql.org/docs/current/ddl-constraints.html"
+      }
+    ]
+  }
+]

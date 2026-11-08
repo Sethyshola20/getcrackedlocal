@@ -1,0 +1,317 @@
+{
+  "id": "inference",
+  "topic": "inference",
+  "title": "ML inference: memory budgets to serving systems",
+  "description": "Reason about decoder serving through model memory, prefill and decode, scheduling, quantization, caching, and workload-based evaluation.",
+  "lessons": [
+    {
+      "id": "lesson-inference-execution-graph",
+      "moduleId": "inference-1",
+      "kind": "concept",
+      "title": "Serving is more than one matrix multiplication",
+      "summary": "Trace model execution and host-side work",
+      "objectives": [
+        "Trace model execution and host-side work.",
+        "Separate model, tokenizer, and scheduler responsibilities."
+      ],
+      "body": "## Core idea\n\nAn inference request includes input formatting, tokenization, admission, model execution, token selection, and output delivery. The serving engine manages tensor layouts, memory, and kernel launches; the model defines the computation. Host queues, transfer, and streaming overhead can matter even when device kernels are fast. A model benchmark and an end-to-end service benchmark therefore answer different questions.\n\n## Worked example\n\nA request may wait 200 ms in a queue before a 20 ms prefill. Reporting only device execution would omit most time to first token. A tokenizer mismatch can also change the workload before any GPU computation begins.\n\n## Try it\n\nDraw a request timeline with queue entry, tokenization, prefill, first token, decode steps, and final byte. Mark which intervals are measured by a kernel benchmark.\n\n## Check your work\n\nThe timeline separates service and device metrics and includes host overhead. It states whether tokenization occurs before or after admission and budgets that work explicitly.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 15,
+      "questionIds": [
+        "inference-cache-purpose",
+        "inference-warmup-state"
+      ]
+    },
+    {
+      "id": "lesson-inference-memory-budget",
+      "moduleId": "inference-1",
+      "kind": "concept",
+      "title": "A complete device-memory ledger",
+      "summary": "Estimate weight memory with explicit precision assumptions",
+      "objectives": [
+        "Estimate weight memory with explicit precision assumptions.",
+        "Budget workspace and runtime overhead beyond model weights."
+      ],
+      "body": "## Core idea\n\nWeights are one part of device memory. Activations, temporary workspaces, KV state, runtime allocations, and fragmentation also matter. Quantized weight storage includes scales and metadata, so parameter-count arithmetic is a lower-level estimate rather than a guaranteed footprint. Reserve headroom and inspect actual engine allocations before setting concurrency.\n\n## Worked example\n\nA synthetic model with 7 billion parameters at two bytes each needs about 14 billion bytes for raw weights, roughly 13.0 GiB. This excludes KV cache and all other memory, so it does not establish that the model fits on a 16 GiB device for a useful workload.\n\n## Try it\n\nCreate a ledger for a synthetic 24 GiB device with weights, fixed workspace, reserved headroom, and per-token KV cost. Calculate a safe token budget under those assumptions.\n\n## Check your work\n\nUse consistent decimal or binary units. The remaining KV capacity is not counted twice, and the plan includes measured engine overhead and a policy for requests exceeding the budget.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 15,
+      "questionIds": [
+        "inference-weight-memory",
+        "inference-page-blocks",
+        "inference-cache-gqa"
+      ]
+    },
+    {
+      "id": "lesson-inference-latency-metrics",
+      "moduleId": "inference-1",
+      "kind": "concept",
+      "title": "Time to first token and time between tokens",
+      "summary": "Define latency metrics at explicit boundaries",
+      "objectives": [
+        "Define latency metrics at explicit boundaries.",
+        "Interpret throughput and user-visible speed together."
+      ],
+      "body": "## Core idea\n\nTime to first token includes the chosen start boundary through first output, often including queueing and prefill. Inter-token latency describes streaming progress after that point. End-to-end duration also depends on output length. Aggregate tokens per second can rise while individual requests become slower. Compare workloads with prompt lengths, output lengths, concurrency, and arrival patterns held explicit.\n\n## Worked example\n\nServing ten requests together may increase total token throughput yet increase each request’s time between tokens. A short-output workload can be dominated by first-token latency, while a long-output workload exposes sustained decode behavior.\n\n## Try it\n\nDefine an interactive and a batch workload. Specify first-token, per-request decode, end-to-end, throughput, rejection, and sample-count metrics for both.\n\n## Check your work\n\nMetrics state whether queue time and network delivery are included. Percentiles are computed on defined units, and aggregate throughput is not substituted for per-request responsiveness.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 15,
+      "questionIds": [
+        "inference-ttft-boundary",
+        "inference-intertoken",
+        "inference-throughput-units"
+      ]
+    },
+    {
+      "id": "lesson-inference-kv-size",
+      "title": "The memory hiding behind every token",
+      "summary": "KV cache · GQA · Memory sizing",
+      "body": "## The problem to understand\n\nA decoder has 32 layers, 8 KV heads per layer, head dimension 128, and FP16 keys and values (2 bytes per element). For **one sequence of 4,096 cached tokens**, how many **MiB** does the KV cache require? Count both K and V. Ignore allocator overhead, block padding, and all model weights.\n\n## The mental model\n\nKV bytes are `2 × layers × tokens × KV_heads × head_dim × bytes_per_element`. Substituting gives `2 × 32 × 4,096 × 8 × 128 × 2 = 536,870,912` bytes, or 512 MiB.\n\nUse the number of KV heads, not necessarily the number of query heads: grouped-query attention can share K/V among multiple query heads. Batch concurrency multiplies retained sequence storage, while allocator/block overhead, prefix sharing, and quantized KV formats change realized usage. The weight footprint is a separate budget.\n\n## Check your understanding\n\n- Count both keys and values across layers and tokens.\n- Use KV-head count and two-byte elements.\n- Convert bytes to binary MiB and exclude weights.\n\n## Think one step further\n\nHow does doubling concurrent sequences compare with doubling the context length of each sequence?\n\n## Primary reading\n\n- [vLLM · PagedAttention design](https://docs.vllm.ai/en/latest/design/paged_attention/)",
+      "minutes": 4,
+      "questionIds": [
+        "inference-kv-size"
+      ],
+      "moduleId": "inference-1",
+      "kind": "workshop",
+      "objectives": [
+        "Count both keys and values across layers and tokens.",
+        "Use KV-head count and two-byte elements."
+      ]
+    },
+    {
+      "id": "lesson-inference-token-admission",
+      "moduleId": "inference-2",
+      "kind": "concept",
+      "title": "Admit tokens, not just requests",
+      "summary": "Use prompt and output budgets to constrain memory demand",
+      "objectives": [
+        "Use prompt and output budgets to constrain memory demand.",
+        "Define cancellation and memory release behavior."
+      ],
+      "body": "## Core idea\n\nRequests vary greatly in prompt and generated length. A request-count limit alone does not bound KV demand unless lengths are also bounded. Admission can reserve a conservative token budget or use dynamic allocation with an explicit preemption or rejection policy. Cancellation must remove scheduler work and release owned resources according to engine semantics, while output limits prevent indefinite growth.\n\n## Worked example\n\nEight short prompts can consume less KV memory than one very long prompt. If the service reserves for maximum output, utilization may decrease; if it overcommits, it needs a controlled response when generations grow.\n\n## Try it\n\nDesign admission for a synthetic engine with a 100,000-token KV budget. Compare worst-case reservation with dynamic allocation using mixed prompt and output limits.\n\n## Check your work\n\nThe policy handles long generations, cancellation, and a budget exhausted mid-work. It documents whether requests wait, preempt, reject, or fail instead of assuming memory allocation always succeeds.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 15,
+      "questionIds": [
+        "inference-output-reservation",
+        "inference-stream-disconnect",
+        "inference-preempt-policy"
+      ]
+    },
+    {
+      "id": "lesson-inference-batch-simulation",
+      "moduleId": "inference-2",
+      "kind": "workshop",
+      "title": "Simulate continuous batching step by step",
+      "summary": "Track active sequences and freed capacity across decode steps",
+      "objectives": [
+        "Track active sequences and freed capacity across decode steps.",
+        "Compare throughput and fairness under mixed lengths."
+      ],
+      "body": "## Core idea\n\nContinuous batching lets finished requests leave and new requests join as execution progresses. Scheduling needs bounds on total tokens, per-step work, and request lifetimes. Long prefills can interfere with decode latency; chunking and phase-aware policies can change that tradeoff. A higher utilization figure alone does not reveal whether short requests starve or interactive latency worsens.\n\n## Worked example\n\nThree requests need 2, 5, and 8 generated tokens. With a fixed batch, short requests can leave idle slots until the longest finishes. With dynamic admission, a new short request may fill a released slot at a later step.\n\n## Try it\n\nSimulate ten decode steps with two arrival times, different output lengths, and a fixed active-token budget. Record wait time, completion time, and capacity at each step.\n\n## Check your work\n\nNo admitted request exceeds the declared budget, and every scheduling decision is reproducible. Compare fairness as well as aggregate completed tokens.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 25,
+      "questionIds": [
+        "inference-batch-padding",
+        "inference-chunked-prefill"
+      ]
+    },
+    {
+      "id": "lesson-inference-phases",
+      "title": "Prefill and decode want different things",
+      "summary": "Prefill · Decode · Roofline",
+      "body": "## The problem to understand\n\nExplain why prompt prefill and single-sequence autoregressive decode can stress a GPU differently. Include parallelism across tokens, model-weight reuse, attention over cached positions, and batch size. Identify at least two reasons the shortcut “prefill is compute-bound, decode is bandwidth-bound” can fail.\n\n## The mental model\n\nPrefill processes many known prompt positions together, creating larger matrix operations and more opportunity to reuse weights. Decode generates the next token from the current prefix, so a single sequence exposes less token parallelism and repeatedly accesses weights and KV state. At small batches, this often makes memory movement a prominent limit.\n\nThese are tendencies, not universal classifications. Larger decode batches improve weight reuse and can become compute-limited; long contexts can make KV attention dominate. Small prompts or small models may be launch/communication limited. Quantization, hardware bandwidth, tensor parallel communication, and kernel choices change the balance. Measure arithmetic intensity, achieved utilization, latency, and memory traffic separately for the actual prefill/decode workload.\n\n## Check your understanding\n\n- Explain known-token prefill parallelism versus autoregressive decode dependency.\n- Discuss weights and KV traffic plus batch-size effects.\n- Give concrete exceptions and a workload-specific measurement plan.\n\n## Think one step further\n\nHow does grouped-query attention affect decode memory traffic compared with multi-head attention?\n\n## Primary reading\n\n- [vLLM · PagedAttention design](https://docs.vllm.ai/en/latest/design/paged_attention/)",
+      "minutes": 5,
+      "questionIds": [
+        "inference-phases"
+      ],
+      "moduleId": "inference-2",
+      "kind": "workshop",
+      "objectives": [
+        "Explain known-token prefill parallelism versus autoregressive decode dependency.",
+        "Discuss weights and KV traffic plus batch-size effects."
+      ]
+    },
+    {
+      "id": "lesson-inference-continuous",
+      "title": "A batch that changes while it runs",
+      "summary": "Continuous batching · Scheduling",
+      "body": "## The problem to understand\n\nDesign a decode scheduler for requests with different prompt and output lengths. Explain why a fixed batch wastes capacity after some requests finish, and how continuous batching admits new requests. Include KV allocation, prefill interference, per-request latency, cancellation, and overload admission.\n\n## The mental model\n\nA static batch can leave finished slots idle until the longest request completes. Continuous batching reconsiders active work at iteration boundaries, removes completed/cancelled sequences, and admits waiting requests subject to compute and KV capacity. The logical batch changes over time; the implementation still has to manage kernels and memory mappings consistently.\n\nBudget tokens and blocks, not only request count. Reclaim KV state when a request ends, and avoid admitting contexts whose eventual growth cannot be handled under the chosen policy. Large prefills can delay decode iterations, so use explicit prefill chunking or scheduling budgets and evaluate time-to-first-token and inter-token latency separately. Bound the waiting queue, honor deadlines, and define fairness/preemption. Higher aggregate throughput is not sufficient if one class of request is starved.\n\n## Check your understanding\n\n- Explain dynamic slot reuse at safe iteration boundaries.\n- Budget and reclaim KV blocks with context growth in mind.\n- Handle prefill/decode interference and latency objectives.\n- Include fairness, cancellation, and bounded admission.\n\n## Think one step further\n\nHow would you protect interactive short requests from a flood of maximum-context jobs?\n\n## Primary reading\n\n- [vLLM · PagedAttention design](https://docs.vllm.ai/en/latest/design/paged_attention/)",
+      "minutes": 7,
+      "questionIds": [
+        "inference-continuous"
+      ],
+      "moduleId": "inference-2",
+      "kind": "workshop",
+      "objectives": [
+        "Explain dynamic slot reuse at safe iteration boundaries.",
+        "Budget and reclaim KV blocks with context growth in mind."
+      ]
+    },
+    {
+      "id": "lesson-inference-precision-kernels",
+      "moduleId": "inference-3",
+      "kind": "concept",
+      "title": "Precision changes storage and execution differently",
+      "summary": "Separate weight-only, activation, and cache precision",
+      "objectives": [
+        "Separate weight-only, activation, and cache precision.",
+        "Evaluate accuracy and kernel support together."
+      ],
+      "body": "## Core idea\n\nQuantization reduces representation precision according to a chosen scheme. Weight-only quantization, activation quantization, and KV quantization affect different memory and compute paths. Scales, outliers, dequantization, and supported kernels determine realized benefit. Lower nominal bit width does not automatically reduce every tensor or double throughput. Quality must be measured on the relevant task and context lengths.\n\n## Worked example\n\nChanging raw weight representation from 16 to 8 bits approximately halves the raw weight bytes, but leaves an FP16 KV cache unchanged. If decoding is dominated by another path or dequantization overhead, end-to-end improvement can be much smaller.\n\n## Try it\n\nCreate a comparison matrix for two precision configurations: weight bytes, KV bytes, kernel support, quality metrics, first-token latency, and decode throughput.\n\n## Check your work\n\nReport actual allocations and task results alongside theoretical bytes. The comparison uses the same workload and avoids treating every 8-bit format or quantization scheme as equivalent.\n\n## Primary reading\n\n- [Transformers quantization overview](https://huggingface.co/docs/transformers/quantization/overview)",
+      "minutes": 15,
+      "questionIds": [
+        "inference-quant-metadata",
+        "inference-flash-io",
+        "inference-accuracy-regression",
+        "inference-shape-capture"
+      ]
+    },
+    {
+      "id": "lesson-inference-parallelism",
+      "moduleId": "inference-3",
+      "kind": "concept",
+      "title": "Parallelism trades memory for communication",
+      "summary": "Distinguish tensor, pipeline, and data parallel serving",
+      "objectives": [
+        "Distinguish tensor, pipeline, and data parallel serving.",
+        "Include inter-device communication in capacity planning."
+      ],
+      "body": "## Core idea\n\nTensor parallelism divides operations or parameters across devices and introduces communication. Pipeline parallelism partitions stages and can suffer bubbles depending on scheduling. Data-parallel replicas handle separate requests and duplicate model state. The best plan depends on model fit, batch shape, topology, and latency objectives. More devices can increase capacity without reducing one request’s latency.\n\n## Worked example\n\nTwo independent replicas can serve more concurrent requests if each model fits, but neither replica gains access to the other’s unused memory automatically. Splitting one model across two devices may solve fit while adding communication per layer.\n\n## Try it\n\nCompare two replicas with a two-way tensor-parallel deployment for a synthetic model and device budget. List fit constraints, communication steps, and expected workload advantages.\n\n## Check your work\n\nThe plan includes link bandwidth and topology assumptions. It identifies whether the goal is model fit, total throughput, or single-request latency rather than claiming generic linear scaling.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 15,
+      "questionIds": [
+        "inference-tensor-parallel",
+        "inference-pipeline-bubbles",
+        "inference-disaggregated-cost"
+      ]
+    },
+    {
+      "id": "lesson-inference-quantization",
+      "title": "Half the bits, not always twice the speed",
+      "summary": "Quantization · Kernels · Accuracy",
+      "body": "## The problem to understand\n\nA team changes a model’s weight storage from FP16 to a 4-bit format and expects every inference metric to improve by exactly 4×. Which statements are correct? Select all that apply.\n\n## The mental model\n\nThe raw weight representation shrinks by four in the simplified bit count, but scales, zero points, packing, and alignment add metadata. Latency depends on supported kernels, dequantization, batch size, memory traffic, and the hardware’s arithmetic paths. A format can save memory while adding work or failing to accelerate a compute-bound workload.\n\nWeight quantization does not automatically quantize KV state or activations. Accuracy and robustness must be evaluated on representative tasks and distributions; outliers and layer sensitivity matter. Measure time-to-first-token, inter-token latency, throughput, memory, and quality at matched settings. Compression ratio is not an end-to-end speed guarantee.\n\n## Check your understanding\n\n- Separate raw bit reduction from real storage and kernel execution.\n- Recognize unmodified KV/activation budgets.\n- Require representative quality and matched performance evaluation.\n\n## Think one step further\n\nWhy might a weight-only quantization improve small-batch decode more than a large prefill?\n\n## Primary reading\n\n- [vLLM · PagedAttention design](https://docs.vllm.ai/en/latest/design/paged_attention/)",
+      "minutes": 5,
+      "questionIds": [
+        "inference-quantization"
+      ],
+      "moduleId": "inference-3",
+      "kind": "workshop",
+      "objectives": [
+        "Separate raw bit reduction from real storage and kernel execution.",
+        "Recognize unmodified KV/activation budgets."
+      ]
+    },
+    {
+      "id": "lesson-inference-speculation",
+      "title": "Fast guesses, exact distribution?",
+      "summary": "Speculative decoding · Sampling",
+      "body": "## The problem to understand\n\nA small draft model proposes several tokens, and a larger target model verifies them in parallel. Explain why accepting every token that appears in the target’s top-k does **not** generally preserve the target sampling distribution. Describe the role of acceptance probabilities and residual sampling, and the performance conditions under which speculation helps.\n\n## The mental model\n\nTop-k membership is not a distribution-correct acceptance rule. For a sampled draft token x from q, exact speculative sampling uses acceptance related to `min(1, p(x)/q(x))`, with a correction distribution proportional to the positive part of `p-q` when a proposal is rejected. Verification and continuation must follow the complete algorithm, including the shared prefix and sampling transforms. Greedy speculative decoding has a different deterministic matching contract.\n\nSpeedup requires verification to amortize several accepted tokens at lower cost than serial target steps. Draft overhead, low acceptance, memory traffic, batch size, and scheduler interactions can erase the benefit. Measure accepted tokens per verification, draft/target cost, end-to-end latency, throughput, and distributional correctness. A fast approximate heuristic is a different product contract and should be labeled as such.\n\n## Check your understanding\n\n- Explain why top-k acceptance changes the target distribution.\n- Describe probability-ratio acceptance and residual correction.\n- Distinguish greedy matching from stochastic exactness.\n- Evaluate acceptance versus draft and verification overhead.\n\n## Think one step further\n\nWhy can a more accurate but much slower draft model yield less speedup?\n\n## Primary reading\n\n- [Fast Inference from Transformers via Speculative Decoding](https://arxiv.org/abs/2211.17192)",
+      "minutes": 7,
+      "questionIds": [
+        "inference-speculation",
+        "inference-speculative-work"
+      ],
+      "moduleId": "inference-3",
+      "kind": "workshop",
+      "objectives": [
+        "Explain why top-k acceptance changes the target distribution.",
+        "Describe probability-ratio acceptance and residual correction."
+      ]
+    },
+    {
+      "id": "lesson-inference-prefix-cache-contract",
+      "moduleId": "inference-4",
+      "kind": "concept",
+      "title": "Cache reuse needs an exact identity boundary",
+      "summary": "Specify which inputs determine cached computation",
+      "objectives": [
+        "Specify which inputs determine cached computation.",
+        "Separate cache correctness from tenant isolation."
+      ],
+      "body": "## Core idea\n\nPrefix caching reuses computation only when the relevant token prefix and model execution context match. Model revision, adapters, token formatting, position conventions, and other engine-specific factors can invalidate reuse. Shared cache systems also need isolation, authorization, eviction, and side-channel considerations. A textually similar prompt is not enough to establish equal token state.\n\n## Worked example\n\nTwo tenants submit the same visible instruction but use different adapters. A cache keyed only by text can reuse incompatible state. A shared valid prefix also must not expose another tenant’s private prompt content through an inspection interface.\n\n## Try it\n\nDefine a cache-key contract and tenant policy for a synthetic service. Include model upgrades, adapter changes, eviction during use, and a negative test with one changed token.\n\n## Check your work\n\nOnly compatible execution contexts reuse state, live users retain valid references, and private data is not exposed. Report hit rate together with correctness and isolation assumptions.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 15,
+      "questionIds": [
+        "inference-cache-key",
+        "inference-adapter-isolation"
+      ]
+    },
+    {
+      "id": "lesson-inference-serving-benchmark",
+      "moduleId": "inference-4",
+      "kind": "workshop",
+      "title": "Benchmark the arrival process and long tail",
+      "summary": "Build a workload matrix that represents intended use",
+      "objectives": [
+        "Build a workload matrix that represents intended use.",
+        "Track failed and cancelled requests alongside completed ones."
+      ],
+      "body": "## Core idea\n\nServing performance depends on input and output lengths, arrival rates, concurrency, cache state, precision, and hardware. An open-loop arrival schedule exposes queue growth independently of response speed, while closed-loop clients model a fixed population. Both are useful when labeled. Excluding rejections or timeouts can make overloaded systems appear artificially fast.\n\n## Worked example\n\nA service may keep p99 for completed requests low by rejecting half the offered work. That result differs from meeting the same latency for all admitted requests with acceptable rejection rates.\n\n## Try it\n\nPlan runs at low, near-saturation, and overload rates with mixed lengths. Record first-token and inter-token distributions, successful completions, rejections, cancellations, queue depth, and device memory.\n\n## Check your work\n\nWarm and cold cache results are labeled, work is accounted for, and offered load is recorded. Changes in workload are not presented as improvements in the serving engine.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Transformers text generation](https://huggingface.co/docs/transformers/llm_tutorial)",
+      "minutes": 25,
+      "questionIds": [
+        "inference-slo-goodput"
+      ]
+    },
+    {
+      "id": "lesson-inference-prefix",
+      "title": "Shared prefixes, isolated tenants",
+      "summary": "Prefix caching · Multi-tenancy · KV lifetime",
+      "body": "## The problem to understand\n\nDesign a prefix KV cache for a multi-tenant inference service. Requests can share a long system prompt, but some prefixes contain private tenant data. Specify the cache identity, model/tokenizer/version boundaries, block ownership and eviction, memory pressure, and the information that hit/miss timing might reveal. Decide when reuse should be tenant-scoped.\n\n## The mental model\n\nReuse only state produced by an equivalent computation: exact token prefix, model and adapter identity, positional configuration, relevant execution settings, and a consistent cache format. A shared text string is not enough if tokenization or model weights differ. Use immutable shared prefix blocks with reference counts or another sound lifetime scheme; private continuations must not mutate a shared block without copy-on-write.\n\nInclude a tenant/security domain in the key when prefix existence or content is private. Cross-tenant timing differences can expose whether a prefix is cached even without returning its bytes. Evaluate isolation against intended sharing benefits. Bound memory, evict only unreferenced entries, and define admission under pressure so caching cannot starve active decoding. Track hit tokens, saved prefill time, fragmentation, eviction, and per-tenant impact. Invalidate through versioned identity rather than hoping every process flushes simultaneously.\n\n## Check your understanding\n\n- Key exact computational identity including tokens, model, adapter, and positional/version state.\n- Use immutable shared blocks with safe ownership, eviction, and private continuation.\n- Address tenant isolation and hit/miss timing leakage.\n- Bound cache memory and evaluate saved work and per-tenant effects.\n\n## Think one step further\n\nHow would partial-block prefix matches interact with copy-on-write and eviction?\n\n## Primary reading\n\n- [vLLM · PagedAttention design](https://docs.vllm.ai/en/latest/design/paged_attention/)",
+      "minutes": 11,
+      "questionIds": [
+        "inference-prefix"
+      ],
+      "moduleId": "inference-4",
+      "kind": "workshop",
+      "objectives": [
+        "Key exact computational identity including tokens, model, adapter, and positional/version state.",
+        "Use immutable shared blocks with safe ownership, eviction, and private continuation."
+      ]
+    },
+    {
+      "id": "lesson-inference-serving-capstone",
+      "moduleId": "inference-4",
+      "kind": "capstone",
+      "title": "Capstone: a capacity plan and serving simulator",
+      "summary": "Integrate memory, admission, scheduling, and workload evidence",
+      "objectives": [
+        "Integrate memory, admission, scheduling, and workload evidence.",
+        "Defend an optimization against quality and latency objectives."
+      ],
+      "body": "## Core idea\n\nBuild a small discrete-event serving simulator or use a local engine if hardware is available. Model prompt and output lengths, prefill/decode costs, a KV budget, admission, cancellation, and a scheduling policy. Clearly separate assumed simulator costs from measured engine performance. Compare a baseline against one change such as dynamic batching or a cache policy.\n\n## Worked example\n\nA burst of long prompts arrives while interactive decodes are active. The policy must decide how much prefill to admit without exhausting memory or violating its stated latency target.\n\n## Try it\n\nDeliver the resource ledger, workload fixtures, scheduler trace, metrics, and one recommendation with tradeoffs. Test oversized prompts, cancellation, full memory, and an incompatible cache key. Include quality checks if model precision changes.\n\n## Check your work\n\nAcceptance requires bounded modeled resources, complete request accounting, explicit assumptions, and reproducible comparison. Synthetic timings support reasoning about the model; they are not claimed as real GPU performance.\n\n## Primary reading\n\n- [PagedAttention paper](https://arxiv.org/abs/2309.06180)\n- [Speculative sampling paper](https://arxiv.org/abs/2302.01318)",
+      "minutes": 60,
+      "questionIds": [
+        "inference-continuous",
+        "inference-output-reservation",
+        "inference-slo-goodput"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Understand tensors, matrix multiplication, and decoder attention.",
+    "Use byte units and basic bandwidth/latency arithmetic."
+  ],
+  "outcomes": [
+    "Estimate weight, activation, workspace, and KV-cache memory separately.",
+    "Explain prefill, decode, batching, and admission tradeoffs.",
+    "Evaluate quantization, parallelism, and speculative decoding under a defined workload.",
+    "Design an observable serving plan with bounded resources and tenant isolation."
+  ],
+  "modules": [
+    {
+      "id": "inference-1",
+      "title": "Serving and resource fundamentals",
+      "description": "Establish model execution, phase differences, and memory accounting.",
+      "level": "Foundation"
+    },
+    {
+      "id": "inference-2",
+      "title": "Scheduling and batching",
+      "description": "Connect token budgets, latency, and dynamic request lifetimes.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "inference-3",
+      "title": "Optimization tradeoffs",
+      "description": "Study precision, kernel work, speculation, and parallel execution.",
+      "level": "Advanced"
+    },
+    {
+      "id": "inference-4",
+      "title": "Service guarantees",
+      "description": "Integrate caching, admission, observability, and workload evaluation.",
+      "level": "Expert"
+    }
+  ]
+}

@@ -1,0 +1,960 @@
+[
+  {
+    "id": "networking-stream",
+    "topic": "networking",
+    "title": "One send is not one message",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "TCP",
+      "Framing"
+    ],
+    "prompt": "A client calls send twice, each time with a 100-byte application message. The server calls recv with a 1,000-byte buffer. Which result is guaranteed by TCP, assuming a healthy connection and successful delivery?",
+    "solution": "TCP provides an ordered byte stream, not application message boundaries. The receiver may obtain part of a message, one message, or bytes from multiple messages in a read. The application must encode boundaries, for example using a length prefix and a bounded incremental parser.\n\nA send call may itself accept fewer bytes than requested, especially in nonblocking use. Likewise, readability does not imply a complete frame is available. The receiver must preserve partial input, validate advertised lengths before allocation, and distinguish clean EOF at a frame boundary from truncation in the middle of a frame.",
+    "rubric": [
+      "Recognize ordered bytes rather than preserved send boundaries.",
+      "Require explicit message framing and partial-read handling.",
+      "Consider length validation and EOF within a frame."
+    ],
+    "hints": [
+      "Packet segmentation and application writes are different layers.",
+      "The socket API returns the number of bytes actually processed."
+    ],
+    "followUp": "How would your framing parser defend against a peer announcing a 4 GiB frame?",
+    "references": [
+      {
+        "title": "IETF · TCP specification (RFC 9293)",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ],
+    "options": [
+      "Every recv returns exactly one 100-byte message.",
+      "The first recv must return exactly 200 bytes.",
+      "Bytes remain ordered, but recv boundaries may differ from send boundaries.",
+      "TCP may reorder the application bytes and expects the app to sort them."
+    ],
+    "correct": [
+      2
+    ]
+  },
+  {
+    "id": "networking-bdp",
+    "topic": "networking",
+    "title": "How much data must be in flight?",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 6,
+    "tags": [
+      "Bandwidth-delay product",
+      "Flow control"
+    ],
+    "prompt": "A path has a bottleneck rate of 1 Gbit/s and a round-trip time of 40 ms. Ignoring headers and losses, what minimum amount of unacknowledged data in **decimal megabytes** is needed to fill the path continuously? Use MB = 1,000,000 bytes. This is a bandwidth-delay product calculation, not a claim that TCP immediately reaches that window.",
+    "solution": "The bandwidth-delay product is `1,000,000,000 bits/s × 0.040 s = 40,000,000 bits`, or 5,000,000 bytes = 5 decimal MB. A sender needs enough effective congestion window and receiver window to permit roughly that amount in flight to sustain the idealized bottleneck rate.\n\nThe smaller effective window constrains throughput. Startup behavior, losses, pacing, socket buffering, and application production can reduce achieved throughput further. Larger buffers alone do not create network capacity and may increase queueing delay.",
+    "rubric": [
+      "Multiply rate by round-trip time.",
+      "Convert bits into bytes and use decimal MB.",
+      "Distinguish ideal in-flight requirements from actual congestion-control behavior."
+    ],
+    "hints": [
+      "40 ms is 0.040 seconds.",
+      "The acknowledgment round trip determines how long sent bytes remain outstanding."
+    ],
+    "followUp": "What happens to the required window when the bottleneck rate doubles while RTT stays constant?",
+    "references": [
+      {
+        "title": "IETF · TCP specification (RFC 9293)",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ],
+    "expected": "5"
+  },
+  {
+    "id": "networking-timeout",
+    "topic": "networking",
+    "title": "Timeout does not mean not executed",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 10,
+    "tags": [
+      "Retries",
+      "Idempotency"
+    ],
+    "prompt": "A client sends a request to create an order. The server commits it, but the response is lost before reaching the client. The client times out. Design retry semantics that do not create a duplicate order. Include request identity, concurrent retries, storage atomicity, result replay, and retention policy.",
+    "solution": "A timeout means the client lacks a response, not that the server did nothing. Assign a stable idempotency key to one logical operation and reuse it on retries. Atomically persist a unique key, a canonical request fingerprint, the business effect, and a replayable result within the same transaction or another explicitly proven protocol.\n\nConcurrent retries must converge on one committed operation. Reusing a key with different parameters should be rejected. A retry after commit returns the stored result. If downstream side effects cross a transaction boundary, propagate the identity or use an outbox with idempotent consumers. Key retention defines the period of duplicate protection; expiring it too early reopens the risk. Backoff and jitter reduce retry storms but do not provide idempotency.",
+    "rubric": [
+      "Distinguish client uncertainty from server non-execution.",
+      "Persist identity and business effect atomically with concurrency control.",
+      "Replay results and reject conflicting payloads for one key.",
+      "Define retention and cross-service side-effect behavior."
+    ],
+    "hints": [
+      "The server may have committed before the response was lost.",
+      "A lookup followed by an insert is unsafe without an atomic uniqueness rule."
+    ],
+    "followUp": "What response should a retry receive while the original operation is still in progress?",
+    "references": [
+      {
+        "title": "IETF · TCP specification (RFC 9293)",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-nagle",
+    "topic": "networking",
+    "title": "The tiny write with a large delay",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 11,
+    "tags": [
+      "Nagle",
+      "Delayed ACK",
+      "TCP_NODELAY"
+    ],
+    "prompt": "A request is emitted in two small writes. Sometimes the first segment is sent while the second is held until an acknowledgment, and the receiver waits for more request bytes before responding. Explain how Nagle’s algorithm and delayed acknowledgments can interact. Give two application-level remedies and describe why blindly enabling TCP_NODELAY everywhere is not a full performance strategy.",
+    "solution": "Nagle’s algorithm can hold a small write while earlier data remains unacknowledged. A receiver using delayed ACKs may wait briefly for additional data before acknowledging. If an application needs the second write to form a complete request, the two policies can introduce an avoidable delay. Exact timers and interactions vary by stack and connection state.\n\nPrefer composing a complete small request into one write or vectored write, while still handling partial sends. Where the protocol genuinely needs prompt independent small writes, evaluate TCP_NODELAY. Packet capture and timestamps should confirm the mechanism. Disabling Nagle can increase packet rate and CPU/network overhead; it does not fix slow receivers, application buffering, congestion, or scheduling. Treat packetization and latency as workload-specific choices.",
+    "rubric": [
+      "Explain the unacknowledged-small-write condition and delayed ACK interaction.",
+      "Offer request coalescing/vectored writes and targeted TCP_NODELAY.",
+      "Validate with packet evidence and discuss packet-rate tradeoffs."
+    ],
+    "hints": [
+      "Why might the sender wait for an ACK while the receiver waits for request completion?",
+      "The delay can originate in packetization rather than link propagation."
+    ],
+    "followUp": "How can a TLS buffering layer reintroduce latency even after TCP_NODELAY is enabled?",
+    "references": [
+      {
+        "title": "IETF · TCP specification (RFC 9293)",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-backpressure",
+    "topic": "networking",
+    "title": "The queue moved; the bottleneck did not",
+    "difficulty": "Advanced",
+    "format": "multi_select",
+    "minutes": 9,
+    "tags": [
+      "Flow control",
+      "Backpressure"
+    ],
+    "prompt": "A downstream service can sustain 500 requests/s. An upstream service receives 2,000 requests/s indefinitely and buffers requests in memory. Which statements are correct? Select all that apply.",
+    "solution": "With sustained arrival above service capacity, the backlog grows without bound unless the system rejects, sheds, slows, or otherwise reduces admitted work. Adding a larger queue delays visible failure but does not increase the downstream service rate. Bounded admission and deadline-aware cancellation keep resource use explicit.\n\nTCP flow control can eventually slow a byte sender, but it does not automatically provide end-to-end application admission control across multiple queues, asynchronous producers, or fanout. Retries can amplify offered load unless budgeted. A durable queue changes where backlog lives and its failure semantics; it does not remove the mismatch between arrival and service rates.",
+    "rubric": [
+      "Recognize sustained positive backlog growth.",
+      "Use bounded admission or load reduction rather than an arbitrarily large queue.",
+      "Separate transport flow control from end-to-end work admission."
+    ],
+    "hints": [
+      "Compare admitted work per second with completed work per second.",
+      "Moving a queue to disk changes storage, not service capacity."
+    ],
+    "followUp": "How would a per-request deadline change which queued work you should process next?",
+    "references": [
+      {
+        "title": "IETF · TCP specification (RFC 9293)",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ],
+    "options": [
+      "A larger in-memory queue permanently solves the capacity mismatch.",
+      "Without reduced admission or increased capacity, the backlog grows.",
+      "Bounded admission can make overload behavior predictable.",
+      "TCP flow control automatically bounds every application queue across the entire call graph."
+    ],
+    "correct": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": "networking-quic",
+    "topic": "networking",
+    "title": "Which head-of-line blocking disappeared?",
+    "difficulty": "Expert",
+    "format": "explanation",
+    "minutes": 15,
+    "tags": [
+      "QUIC",
+      "HTTP/3",
+      "Loss recovery"
+    ],
+    "prompt": "Compare HTTP/2 over one TCP connection with HTTP/3 over QUIC when one packet is lost. Explain the head-of-line blocking that QUIC streams can avoid, the ordering that remains within each stream, and why connection-level congestion control and shared bottlenecks still couple streams. Address a request that depends on missing QPACK state.",
+    "solution": "TCP exposes one ordered byte stream. A missing segment prevents later bytes from being delivered to the HTTP/2 layer even if those bytes carry another logical stream. QUIC tracks stream data independently, so missing bytes on one stream do not inherently prevent delivery of complete data on another. Each individual reliable QUIC stream still delivers its bytes in order.\n\nQUIC packets can contain frames from several streams, so one loss may affect several streams directly. They also share connection-level congestion control, flow-control limits, CPU, and the network bottleneck. Application dependencies can introduce their own blocking: a header block referencing unavailable QPACK dynamic-table state may be blocked even when its stream bytes have arrived. QUIC removes a transport ordering dependency, not all queueing or cross-stream dependence.",
+    "rubric": [
+      "Identify TCP’s connection-wide ordered delivery constraint.",
+      "Explain independent QUIC stream delivery and remaining per-stream ordering.",
+      "Account for shared congestion/resources and packets carrying multiple streams.",
+      "Recognize QPACK/application-level dependency blocking."
+    ],
+    "hints": [
+      "A transport packet and a logical stream are not the same unit.",
+      "Independent delivery does not mean independent bandwidth or congestion control."
+    ],
+    "followUp": "Would putting every request on its own TCP connection remove all tail-latency coupling?",
+    "references": [
+      {
+        "title": "IETF · QUIC transport (RFC 9000)",
+        "url": "https://www.rfc-editor.org/rfc/rfc9000.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-udp-contract",
+    "topic": "networking",
+    "title": "A datagram keeps a boundary, not a promise",
+    "difficulty": "Foundation",
+    "format": "multi_select",
+    "minutes": 5,
+    "tags": [
+      "UDP",
+      "Transport"
+    ],
+    "prompt": "Which properties does ordinary UDP provide by itself?",
+    "solution": "UDP preserves datagram boundaries at the socket interface but does not guarantee delivery, ordering, or duplicate suppression. Applications needing those properties must implement them or choose another transport. A checksum detects some corruption but is not cryptographic authentication.",
+    "hints": [
+      "Separate message boundaries from reliability.",
+      "Consider losses and reordering."
+    ],
+    "rubric": [
+      "Identify datagram boundaries.",
+      "Reject reliability and order guarantees.",
+      "Distinguish checksums from authentication."
+    ],
+    "followUp": "What can happen if the receive buffer is smaller than one datagram?",
+    "references": [
+      {
+        "title": "RFC 768 · UDP",
+        "url": "https://www.rfc-editor.org/rfc/rfc768.html"
+      }
+    ],
+    "options": [
+      "Preserved datagram boundaries",
+      "Guaranteed delivery",
+      "Guaranteed ordering",
+      "No built-in retransmission guarantee"
+    ],
+    "correct": [
+      0,
+      3
+    ]
+  },
+  {
+    "id": "networking-tcp-handshake",
+    "topic": "networking",
+    "title": "Acknowledging sequence space",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "TCP",
+      "Handshake"
+    ],
+    "prompt": "Explain the purpose of TCP's SYN, SYN-ACK, ACK handshake and why a successful connect is not proof that an application request will succeed.",
+    "solution": "The handshake establishes transport state and synchronizes initial sequence numbers in both directions. It does not authenticate application intent or prove that the server can complete later work. Failures can occur after connection setup, so application protocols still need deadlines, framing, and outcome handling.",
+    "hints": [
+      "Transport establishment precedes application work.",
+      "Connection state and business state differ."
+    ],
+    "rubric": [
+      "Explain sequence synchronization.",
+      "Separate transport setup from request success.",
+      "Retain application failure handling."
+    ],
+    "followUp": "What extra agreement does TLS add after or alongside transport setup?",
+    "references": [
+      {
+        "title": "TCP specification · RFC 9293",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-cidr-hosts",
+    "topic": "networking",
+    "title": "Count addresses before reserving roles",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "IP",
+      "CIDR"
+    ],
+    "prompt": "How many IPv4 addresses are in a /26 block? Count every address, without subtracting network or broadcast conventions.",
+    "solution": "64 addresses: IPv4 has 32 bits, leaving 6 host bits, and 2^6=64. Usable-host conventions depend on subnet type and deployment; the question asks only for the address count.",
+    "hints": [
+      "Subtract prefix length from 32.",
+      "Count all combinations of the remaining bits."
+    ],
+    "rubric": [
+      "Compute six host bits.",
+      "Calculate 64 addresses.",
+      "Avoid subtracting reserved roles."
+    ],
+    "followUp": "How many /26 blocks fit inside a /24?",
+    "references": [
+      {
+        "title": "RFC 4632 · CIDR",
+        "url": "https://www.rfc-editor.org/rfc/rfc4632.html"
+      }
+    ],
+    "expected": "64"
+  },
+  {
+    "id": "networking-dns-ttl",
+    "topic": "networking",
+    "title": "A cache lifetime is not a global switch",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "DNS",
+      "Caching"
+    ],
+    "prompt": "A service changes its DNS address after publishing a long TTL. Why may clients continue connecting to the old address, and why does lowering TTL at cutover not immediately fix cached entries?",
+    "solution": "Resolvers may retain the old answer until its existing TTL expires; applications may also cache according to their own behavior. Lowering the authoritative TTL only affects newly fetched records. Plan overlap and reduce TTL sufficiently before migration, while measuring actual client resolution and connection reuse.",
+    "hints": [
+      "Old caches know only the old TTL.",
+      "Established connections may not resolve again."
+    ],
+    "rubric": [
+      "Explain retained answers.",
+      "Distinguish old and newly published TTLs.",
+      "Plan overlap and observe clients."
+    ],
+    "followUp": "How can negative caching delay a newly created record?",
+    "references": [
+      {
+        "title": "RFC 1034 · DNS concepts",
+        "url": "https://www.rfc-editor.org/rfc/rfc1034.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-mtu-payload",
+    "topic": "networking",
+    "title": "Headers consume the path budget",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "MTU",
+      "Packet sizing"
+    ],
+    "prompt": "Assume an IP MTU of 1500 bytes, a 20-byte IPv4 header, a 20-byte TCP header, and no options or tunnels. What is the maximum TCP payload per packet?",
+    "solution": "1460 bytes: 1500−20−20. MTU here includes the IP packet, not Ethernet framing. Options, IPv6, encapsulation, and path changes can reduce the payload budget; do not apply this result to an unspecified path.",
+    "hints": [
+      "Subtract both transport and network headers.",
+      "Ethernet overhead is outside the stated IP MTU."
+    ],
+    "rubric": [
+      "Compute 1460.",
+      "Apply the specified layer boundary.",
+      "State omitted-overhead assumptions."
+    ],
+    "followUp": "What changes with a 40-byte IPv6 header under the same MTU?",
+    "references": [
+      {
+        "title": "RFC 1191 · Path MTU discovery",
+        "url": "https://www.rfc-editor.org/rfc/rfc1191.html"
+      }
+    ],
+    "expected": "1460"
+  },
+  {
+    "id": "networking-half-close",
+    "topic": "networking",
+    "title": "One direction can finish first",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "TCP",
+      "Connection lifecycle"
+    ],
+    "prompt": "A TCP peer performs an orderly shutdown of its write direction. After all received bytes are consumed, what does the other side observe when reading?",
+    "solution": "An EOF indicates that the peer will send no more bytes in that direction. TCP remains bidirectional: the receiving side may still send until its own write direction is closed or an error intervenes. EOF is distinct from connection reset and from an empty application message.",
+    "hints": [
+      "Each direction has its own byte stream.",
+      "Orderly end differs from reset."
+    ],
+    "rubric": [
+      "Identify EOF.",
+      "Preserve the possible reverse direction.",
+      "Distinguish transport end from message framing."
+    ],
+    "followUp": "How can half-close delimit a request while allowing a streamed response?",
+    "references": [
+      {
+        "title": "TCP specification · RFC 9293",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ],
+    "options": [
+      "A mandatory reset",
+      "EOF for that receive direction",
+      "An empty UDP datagram",
+      "Proof the application transaction committed"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "networking-flow-congestion",
+    "topic": "networking",
+    "title": "Two windows constrain one sender",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "TCP",
+      "Flow control"
+    ],
+    "prompt": "Distinguish TCP's receive window from its congestion window. Which limits sending when the receiver has memory but the network is congested?",
+    "solution": "The receive window advertises receiver capacity; the congestion window controls outstanding data based on the network-control algorithm. Available sending is constrained by both, along with data and protocol state. A large receive window cannot override a small congestion window or eliminate network congestion.",
+    "hints": [
+      "One window protects the receiver.",
+      "The other responds to path conditions."
+    ],
+    "rubric": [
+      "Define both windows.",
+      "Explain their joint constraint.",
+      "Identify congestion-window limitation."
+    ],
+    "followUp": "Why might increasing socket buffers fail to improve throughput?",
+    "references": [
+      {
+        "title": "TCP specification · RFC 9293",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-seq-bytes",
+    "topic": "networking",
+    "title": "Sequence numbers count bytes",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "TCP",
+      "Sequence numbers"
+    ],
+    "prompt": "In a simplified established TCP stream, a segment starts at sequence 1000 and carries 500 payload bytes. Assuming no SYN or FIN and all previous data is received, what cumulative ACK follows?",
+    "solution": "1500. The ACK identifies the next expected byte, so the payload spans sequence positions 1000 through 1499. SYN and FIN each consume sequence space, but the question explicitly excludes them.",
+    "hints": [
+      "An ACK names the next expected position.",
+      "The last payload byte is 1499."
+    ],
+    "rubric": [
+      "Compute 1500.",
+      "Explain byte-based sequence space.",
+      "Respect excluded control flags."
+    ],
+    "followUp": "What ACK remains if a later segment arrives before a missing earlier segment?",
+    "references": [
+      {
+        "title": "TCP specification · RFC 9293",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ],
+    "expected": "1500"
+  },
+  {
+    "id": "networking-http-idempotency",
+    "topic": "networking",
+    "title": "Retry safety belongs to the operation",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "HTTP",
+      "Retries"
+    ],
+    "prompt": "Explain why retrying a timed-out request requires understanding idempotency rather than merely checking whether a new connection succeeds.",
+    "solution": "A timeout can occur after the server applies the operation but before the response arrives. Retrying an idempotent operation should preserve its intended effect, while non-idempotent creation may duplicate work. Use stable idempotency keys and server-side deduplication where required, and preserve the same key across ambiguous retries.",
+    "hints": [
+      "The missing response does not reveal server state.",
+      "New transport state does not undo old effects."
+    ],
+    "rubric": [
+      "Explain ambiguous completion.",
+      "Distinguish operation semantics.",
+      "Use stable deduplication identity."
+    ],
+    "followUp": "Why can changing the idempotency key on every retry defeat the mechanism?",
+    "references": [
+      {
+        "title": "RFC 9110 · HTTP semantics",
+        "url": "https://www.rfc-editor.org/rfc/rfc9110.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-port-exhaustion",
+    "topic": "networking",
+    "title": "Short connections consume finite tuples",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "TCP",
+      "Connection reuse"
+    ],
+    "prompt": "A client making many short outbound connections sees address-allocation failures despite healthy CPU and memory. Explain ephemeral-port pressure and practical checks.",
+    "solution": "Connections consume local address-port and remote endpoint tuples, and recently closed connections may remain in TIME_WAIT. Inspect socket states, destination concentration, port ranges, and connection churn. Use bounded persistent connection pools and appropriate request multiplexing; changing limits without controlling churn can only postpone exhaustion.",
+    "hints": [
+      "Network tuples are finite resources.",
+      "Closed application handles can leave transport state."
+    ],
+    "rubric": [
+      "Identify tuple and TIME_WAIT pressure.",
+      "Measure states and churn.",
+      "Use bounded connection reuse."
+    ],
+    "followUp": "How can many remote destinations affect tuple reuse differently from one destination?",
+    "references": [
+      {
+        "title": "TCP specification · RFC 9293",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-pmtu-blackhole",
+    "topic": "networking",
+    "title": "Small requests work, large responses hang",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "MTU",
+      "ICMP"
+    ],
+    "prompt": "A tunnel reduces path MTU. Small packets succeed, but large TCP transfers stall because required ICMP feedback is filtered. Explain the likely failure and a repair strategy.",
+    "solution": "Oversized packets cannot traverse the path as sent, and blocked feedback prevents ordinary path-MTU discovery from adapting. Validate packet sizes and ICMP handling, fix the path's MTU contract, and consider supported packetization-layer probing. Blindly increasing retransmission timeouts does not repair an unreachable packet size.",
+    "hints": [
+      "A tunnel adds overhead.",
+      "Repeating the same oversized packet may fail forever."
+    ],
+    "rubric": [
+      "Identify MTU blackholing.",
+      "Verify feedback and encapsulation overhead.",
+      "Repair discovery or sizing."
+    ],
+    "followUp": "Why can a successful ping with a tiny payload miss this fault?",
+    "references": [
+      {
+        "title": "RFC 8899 · Packetization-layer PMTU discovery",
+        "url": "https://www.rfc-editor.org/rfc/rfc8899.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-tls-identity",
+    "topic": "networking",
+    "title": "Encryption alone does not name the peer",
+    "difficulty": "Intermediate",
+    "format": "multi_select",
+    "minutes": 8,
+    "tags": [
+      "TLS",
+      "Authentication"
+    ],
+    "prompt": "A client establishes TLS. Which checks are needed to authenticate the intended server in a typical certificate-based deployment?",
+    "solution": "Validate the certificate chain against intended trust roots and check the requested hostname against certificate identities, including validity and applicable policy. Encryption without peer identity validation permits connection to an unintended party. Disabling verification to repair connectivity removes this assurance.",
+    "hints": [
+      "A certificate can be valid for another hostname.",
+      "Trust and intended identity are separate checks."
+    ],
+    "rubric": [
+      "Validate trust and validity.",
+      "Match the expected hostname.",
+      "Reject disabled verification as equivalent protection."
+    ],
+    "followUp": "How does mutual TLS add client identity checks?",
+    "references": [
+      {
+        "title": "RFC 8446 · TLS 1.3",
+        "url": "https://www.rfc-editor.org/rfc/rfc8446.html"
+      }
+    ],
+    "options": [
+      "Validate the trust chain",
+      "Accept every self-signed certificate automatically",
+      "Check the intended hostname",
+      "Assume encryption proves identity without verification"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "networking-little-law",
+    "topic": "networking",
+    "title": "In-flight work follows arrival rate and time",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Queueing",
+      "Capacity"
+    ],
+    "prompt": "In a stable system, requests arrive at 2000 per second and spend an average of 0.05 seconds in the measured boundary. By Little's law, what is the mean in-flight count?",
+    "solution": "100, using L=λW=2000×0.05. The arrival rate and time must refer to the same stable boundary. This is a mean relationship, not a guarantee that 100 slots cover bursts or tail latency.",
+    "hints": [
+      "Match the units in seconds.",
+      "Little's law describes averages."
+    ],
+    "rubric": [
+      "Compute 100.",
+      "Match measurement boundaries.",
+      "Avoid treating a mean as a hard capacity bound."
+    ],
+    "followUp": "How would doubling mean latency change in-flight work at the same throughput?",
+    "references": [
+      {
+        "title": "Little and Graves · Little’s Law",
+        "url": "https://doi.org/10.1007/978-0-387-73699-0_5"
+      }
+    ],
+    "expected": "100"
+  },
+  {
+    "id": "networking-keepalive-deadline",
+    "topic": "networking",
+    "title": "A live socket can serve a stuck request",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Timeouts",
+      "Keepalive"
+    ],
+    "prompt": "A service enables TCP keepalive and removes request deadlines. Why can clients still wait far too long, and what timeout layers should be defined?",
+    "solution": "Keepalive can detect some failed idle transport peers, often on much longer timescales than an application budget. It does not prove request progress. Define connection setup, handshake, request, idle, and streaming-progress policies as appropriate, propagating a total deadline and cancelling downstream work where possible.",
+    "hints": [
+      "Transport liveness is not application progress.",
+      "Different phases consume one overall budget."
+    ],
+    "rubric": [
+      "Separate keepalive from deadlines.",
+      "Define phase and total limits.",
+      "Propagate cancellation."
+    ],
+    "followUp": "How should a long-lived stream distinguish expected silence from a stalled peer?",
+    "references": [
+      {
+        "title": "TCP specification · RFC 9293",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-retry-amplification",
+    "topic": "networking",
+    "title": "Three layers multiply the attempts",
+    "difficulty": "Advanced",
+    "format": "numeric",
+    "minutes": 12,
+    "tags": [
+      "Retries",
+      "Overload"
+    ],
+    "prompt": "Three nested service layers each make at most three total attempts per incoming attempt. If every deepest attempt fails, what is the maximum number of deepest-layer attempts for one original request?",
+    "solution": "27, because 3×3×3 attempts can reach the deepest layer. This assumes independent retries at every layer and no shared budget or deadline. Centralize or coordinate retries, cap the total budget, and use backoff with jitter rather than multiplying load during failure.",
+    "hints": [
+      "Each attempt can trigger another full retry tree.",
+      "Three attempts includes the initial attempt."
+    ],
+    "rubric": [
+      "Multiply three levels.",
+      "State the attempt-count convention.",
+      "Propose a shared retry budget."
+    ],
+    "followUp": "How would a propagated deadline truncate this tree?",
+    "references": [
+      {
+        "title": "AWS Builders Library · timeouts, retries, and backoff with jitter",
+        "url": "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/"
+      }
+    ],
+    "expected": "27"
+  },
+  {
+    "id": "networking-http2-loss",
+    "topic": "networking",
+    "title": "Multiplexed streams still share TCP ordering",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "HTTP/2",
+      "Head-of-line blocking"
+    ],
+    "prompt": "Why can one lost TCP segment delay delivery to several HTTP/2 streams even though HTTP/2 multiplexes application frames?",
+    "solution": "HTTP/2 frames share one ordered TCP byte stream. A missing byte range blocks delivery of later TCP bytes, even when those bytes belong to independent HTTP/2 streams. Application multiplexing removes one layer of serialization but not TCP's transport-level ordering dependency.",
+    "hints": [
+      "Separate frame multiplexing from transport delivery.",
+      "TCP exposes only contiguous stream bytes."
+    ],
+    "rubric": [
+      "Identify the shared TCP stream.",
+      "Trace loss blocking later bytes.",
+      "Distinguish application and transport ordering."
+    ],
+    "followUp": "How do independent QUIC streams change this dependency?",
+    "references": [
+      {
+        "title": "RFC 9113 · HTTP/2",
+        "url": "https://www.rfc-editor.org/rfc/rfc9113.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-accept-backlog",
+    "topic": "networking",
+    "title": "A larger waiting room does not add workers",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "TCP",
+      "Overload"
+    ],
+    "prompt": "A listener increases its accept backlog to address request overload. Explain what can improve, what cannot, and which measurements decide whether the change helps.",
+    "solution": "A larger backlog can absorb transient connection bursts but does not increase application service capacity. Sustained excess arrivals still cause queue growth, timeouts, or rejection. Measure connection establishment, accept delay, request queue age, and completed throughput; combine bounded queues with admission control and capacity aligned to the bottleneck.",
+    "hints": [
+      "A queue stores demand; it does not process it.",
+      "Separate transient bursts from sustained overload."
+    ],
+    "rubric": [
+      "Explain burst absorption.",
+      "Preserve throughput limits.",
+      "Measure queueing and reject overload deliberately."
+    ],
+    "followUp": "Why can a larger backlog make client latency worse?",
+    "references": [
+      {
+        "title": "TCP specification · RFC 9293",
+        "url": "https://www.rfc-editor.org/rfc/rfc9293.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-load-balancer-state",
+    "topic": "networking",
+    "title": "Health checks can amplify a partial failure",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Load balancing",
+      "Resilience"
+    ],
+    "prompt": "One overloaded backend times out, is removed, then instantly receives full traffic when its health check passes. Design recovery that avoids repeated collapse.",
+    "solution": "Distinguish readiness for new work from simple process liveness, use suitable health thresholds, and gradually restore traffic while observing error and queue metrics. Bound retries and outstanding work so removal does not overwhelm remaining backends. Recovery policy must consider load-dependent behavior, not only an idle probe.",
+    "hints": [
+      "An idle probe is cheaper than production traffic.",
+      "Removing capacity changes load on survivors."
+    ],
+    "rubric": [
+      "Use meaningful readiness.",
+      "Restore load gradually.",
+      "Bound retries and survivor pressure."
+    ],
+    "followUp": "What metric would reveal an oscillating backend before user errors spike?",
+    "references": [
+      {
+        "title": "Google SRE Book · handling overload",
+        "url": "https://sre.google/sre-book/handling-overload/"
+      }
+    ]
+  },
+  {
+    "id": "networking-nat-idle",
+    "topic": "networking",
+    "title": "A silent middlebox forgets the flow",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "NAT",
+      "Idle connections"
+    ],
+    "prompt": "A long-idle connection appears established locally but its next write fails or disappears across a NAT. Explain the hidden state and recovery policy.",
+    "solution": "A NAT or firewall can expire its flow mapping before either endpoint closes the socket. Local established state is not proof the path retains state. Use application-appropriate idle checks or keepalives, bounded operation deadlines, and reconnect handling that respects ambiguous request outcomes rather than blindly replaying mutations.",
+    "hints": [
+      "Endpoints are not the only stateful devices.",
+      "A failed first response may leave application outcome unknown."
+    ],
+    "rubric": [
+      "Identify middlebox expiry.",
+      "Detect with bounded policy.",
+      "Reconnect with operation-aware retry semantics."
+    ],
+    "followUp": "Why should keepalive timing be chosen against the actual path's idle policy?",
+    "references": [
+      {
+        "title": "RFC 5382 · NAT behavior for TCP",
+        "url": "https://www.rfc-editor.org/rfc/rfc5382.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-packet-capture",
+    "topic": "networking",
+    "title": "A capture point defines what you can conclude",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Diagnostics",
+      "Offload"
+    ],
+    "prompt": "A host packet capture shows oversized packets and apparent bad checksums, but the remote endpoint receives normal traffic. Explain how offload can create these observations.",
+    "solution": "Capture may occur before segmentation or checksum offload is completed by the NIC. The captured representation can differ from packets on the wire. Identify capture location and offload configuration, compare remote or external observations, and avoid diagnosing corruption from host-side checksum flags alone.",
+    "hints": [
+      "The NIC may finish packet preparation later.",
+      "A capture is an observation at one layer."
+    ],
+    "rubric": [
+      "Explain segmentation and checksum offload.",
+      "Locate the capture point.",
+      "Corroborate with another observation."
+    ],
+    "followUp": "What changes when inspecting receive-side coalescing?",
+    "references": [
+      {
+        "title": "Linux kernel · segmentation offloads",
+        "url": "https://docs.kernel.org/networking/segmentation-offloads.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-fair-queue",
+    "topic": "networking",
+    "title": "One large transfer crowds out small requests",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Scheduling",
+      "Fairness"
+    ],
+    "prompt": "A proxy uses one FIFO queue for all tenants and request sizes. Design controls to protect small interactive requests from a tenant sending large transfers.",
+    "solution": "Bound per-tenant and global concurrency and queued bytes, then schedule with an explicit fairness policy such as weighted queues. Separate or account for expensive work and enforce deadlines. Measure queue age by tenant and class; priority alone can starve bulk work unless minimum progress is part of the policy.",
+    "hints": [
+      "Request count misses variable cost.",
+      "Fairness needs an explicit unit and policy."
+    ],
+    "rubric": [
+      "Bound count and bytes.",
+      "Schedule by tenant or class.",
+      "Measure starvation and deadline outcomes."
+    ],
+    "followUp": "How would you handle a tenant that understates request cost?",
+    "references": [
+      {
+        "title": "Linux manual · fair queueing",
+        "url": "https://man7.org/linux/man-pages/man8/tc-fq.8.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-anycast-state",
+    "topic": "networking",
+    "title": "The same address may lead somewhere else",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Routing",
+      "Anycast"
+    ],
+    "prompt": "A stateful service uses one anycast IP across several sites. Explain what a route change can do to a long-lived connection and how the application should recover.",
+    "solution": "Routing can send later packets to a different site that lacks the connection state, causing resets or timeouts unless state or forwarding is deliberately coordinated. Do not assume a stable destination process from a stable IP. Use bounded reconnect and session-resumption semantics, handling ambiguous in-flight effects with application identities.",
+    "hints": [
+      "Address identity is not process affinity.",
+      "Existing transport state may be site-local."
+    ],
+    "rubric": [
+      "Explain path change and missing state.",
+      "Define reconnection and resumption.",
+      "Preserve operation deduplication across sites."
+    ],
+    "followUp": "What costs arise from synchronizing every live connection across sites?",
+    "references": [
+      {
+        "title": "RFC 4786 · Anycast services",
+        "url": "https://www.rfc-editor.org/rfc/rfc4786.html"
+      }
+    ]
+  },
+  {
+    "id": "networking-network-slo",
+    "topic": "networking",
+    "title": "A success rate can hide one broken region",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Observability",
+      "SLOs"
+    ],
+    "prompt": "Design network-service telemetry that detects a regional failure even when global average latency and success rate remain healthy.",
+    "solution": "Record request outcomes and latency distributions by relevant region, route, destination, and operation, using controlled cardinality. Track timeout and queue phases, compare active probes with real traffic, and weight global reports transparently. Alert on meaningful regional objectives so a small affected population is not averaged away.",
+    "hints": [
+      "Traffic volume weights global averages.",
+      "Regional tails need their own observations."
+    ],
+    "rubric": [
+      "Segment by failure-relevant dimensions.",
+      "Measure outcomes and latency phases.",
+      "Define regional objectives with cardinality limits."
+    ],
+    "followUp": "How can changing traffic mix distort an aggregate comparison?",
+    "references": [
+      {
+        "title": "Google SRE Book · monitoring distributed systems",
+        "url": "https://sre.google/sre-book/monitoring-distributed-systems/"
+      }
+    ]
+  },
+  {
+    "id": "networking-stream-resume",
+    "topic": "networking",
+    "title": "Reconnect without repeating or skipping events",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Streaming",
+      "Recovery"
+    ],
+    "prompt": "Design a resumable event stream across dropped connections. Clients must identify gaps and avoid applying the same event twice.",
+    "solution": "Give events stable identities and ordered resume positions within a documented stream scope. Persist the applied position consistently with client state, replay from the correct boundary, and deduplicate repeats. Define retention expiry and snapshot fallback; reconnection alone cannot recover events that the server no longer retains.",
+    "hints": [
+      "A transport connection is not the stream identity.",
+      "Applying state and advancing the cursor must agree."
+    ],
+    "rubric": [
+      "Define IDs and cursor scope.",
+      "Couple application and checkpointing.",
+      "Handle duplicates, gaps, and expired history."
+    ],
+    "followUp": "What changes when multiple partitions have independent ordering?",
+    "references": [
+      {
+        "title": "Kafka design · delivery semantics",
+        "url": "https://kafka.apache.org/documentation/#semantics"
+      }
+    ]
+  }
+]

@@ -1,0 +1,947 @@
+[
+  {
+    "id": "hft-budget",
+    "topic": "hft",
+    "title": "Where did the microseconds go?",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Latency budget",
+      "Serialization"
+    ],
+    "prompt": "A simplified non-overlapping tick-to-trade path has 1.2 μs of receive/parse time, 0.8 μs of strategy time, and 0.6 μs of risk/encode time. A 250-byte wire image then serializes at 10 Gbit/s. Ignore propagation, framing beyond those 250 bytes, and all overlap. What is total latency in **microseconds**? Enter a number.",
+    "solution": "Serialization is `250 × 8 / 10^10` seconds = 0.2 μs. The assumed sequential path is therefore `1.2 + 0.8 + 0.6 + 0.2 = 2.8 μs`.\n\nThis is a budget under deliberately simplified assumptions, not a real exchange latency claim. Actual timing must define its boundaries: application timestamp, NIC timestamp, first or last wire bit, switch transit, and venue acknowledgment are different endpoints. Some stages can overlap, while queueing and scheduling add variable delay.",
+    "rubric": [
+      "Convert bytes to bits.",
+      "Convert serialization seconds into microseconds.",
+      "Sum all stages under the stated no-overlap assumption."
+    ],
+    "hints": [
+      "A 10 Gbit/s link sends 10,000 bits per microsecond.",
+      "The 250-byte image contains 2,000 bits."
+    ],
+    "followUp": "If parsing can start before the final packet byte arrives, which terms may overlap and how would you measure that?",
+    "references": [
+      {
+        "title": "Linux kernel · scaling the networking stack",
+        "url": "https://www.kernel.org/doc/html/latest/networking/scaling.html"
+      }
+    ],
+    "expected": "2.8"
+  },
+  {
+    "id": "hft-sequence-gap",
+    "topic": "hft",
+    "title": "A missing packet is a state transition",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Market data",
+      "Sequencing",
+      "Recovery"
+    ],
+    "prompt": "A multicast feed carries monotonically increasing per-channel sequence numbers. You have applied events through 1041, then receive 1044. Packets may be duplicated, reordered, or lost. Design the book-builder response. A recovery service can provide retransmissions or a snapshot tagged with sequence S. Explain when the book can safely become tradable again.",
+    "solution": "A gap means the current book is no longer known to be complete. Mark the affected channel or instruments stale and stop decisions that require an accurate book. Buffer later packets within explicit memory and time bounds; do not apply them as if the missing updates never existed. Discard duplicates using the sequence domain, and handle bounded reordering without confusing it with permanent loss.\n\nReplay missing events in sequence, or install an atomic snapshot representing state through S and replay a contiguous suffix strictly after S. The handoff must avoid dropping updates that arrive during snapshot acquisition. Resume only after a validated contiguous sequence is restored and book invariants hold. If recovery cannot catch up within bounds, restart from a newer snapshot. Track gap rate, recovery duration, buffer pressure, and stale exposure.",
+    "rubric": [
+      "Treat an unexplained gap as loss of book validity.",
+      "Bound buffering and handle duplicate/reordered packets.",
+      "Define snapshot sequence plus contiguous replay handoff.",
+      "Specify a safe resume condition and failed-recovery behavior."
+    ],
+    "hints": [
+      "A later packet does not imply the missing updates were irrelevant.",
+      "What exact event prefix does the snapshot represent?"
+    ],
+    "followUp": "How does recovery change when two redundant feeds carry the same logical events with different packetization?",
+    "references": [
+      {
+        "title": "Linux kernel · scaling the networking stack",
+        "url": "https://www.kernel.org/doc/html/latest/networking/scaling.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-tails",
+    "topic": "hft",
+    "title": "An average cannot price your worst moments",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 9,
+    "tags": [
+      "Percentiles",
+      "Queueing"
+    ],
+    "prompt": "Two implementations process the same realistic open-loop arrival trace. A averages 4 μs with p99.9 of 180 μs; B averages 6 μs with p99.9 of 20 μs. Explain why neither number alone picks a winner. Describe a measurement plan that exposes queueing, burst sensitivity, and any correlation between slow events and market conditions.",
+    "solution": "The relevant objective depends on business deadlines, correctness, and which events are slow. A low mean can hide rare pauses exactly when traffic bursts or important market events arrive. A bounded tail may be more valuable, but a single percentile also hides the shape and severity beyond it.\n\nReplay representative bursts at controlled arrival times, timestamp scheduled arrival and completion, and report throughput, drops, queue age, and a latency histogram with sufficient tail samples. Separate service time from end-to-end response time. Correlate outliers with GC, page faults, scheduling, queue occupancy, and event categories. Include warmup and steady-state tests and document hardware, clock source, and load. Compare behavior near saturation instead of reporting only a lightly loaded median.",
+    "rubric": [
+      "Tie latency objectives to deadlines and event importance.",
+      "Measure open-loop response time and queueing, including rejected work.",
+      "Collect enough tail samples and correlate outliers with causes."
+    ],
+    "hints": [
+      "A percentile says how many observations are below a threshold, not how bad the remaining ones are.",
+      "At high utilization, queue wait can dominate the work itself."
+    ],
+    "followUp": "How would you report uncertainty in p99.99 when only 10,000 requests were observed?",
+    "references": [
+      {
+        "title": "Linux kernel · scaling the networking stack",
+        "url": "https://www.kernel.org/doc/html/latest/networking/scaling.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-price",
+    "topic": "hft",
+    "title": "A price is an integer plus a contract",
+    "difficulty": "Advanced",
+    "format": "choice",
+    "minutes": 8,
+    "tags": [
+      "Fixed point",
+      "Order books"
+    ],
+    "prompt": "An instrument has a tick size of 0.005 currency units. Its feed transmits a signed integer count of ticks. Which internal representation best preserves exact price equality and ordering for book keys, while still requiring explicit overflow checks at conversion boundaries?",
+    "solution": "Keep prices as an integer number of ticks or another explicitly specified fixed-point unit. This preserves exact equality and ordering within the supported range. Define the scale with the instrument metadata and validate conversions, arithmetic overflow, and protocol bounds. A decimal display is a presentation operation.\n\nBinary floating point cannot exactly represent many decimal fractions. Equality and rounding behavior can then disagree with venue tick rules. Blindly multiplying a received floating-point value by 200 does not recover information already rounded away. Different instruments can have different tick schedules, so the representation contract must travel with the instrument or normalized schema.",
+    "rubric": [
+      "Use exact integer units matching the protocol contract.",
+      "Preserve scale metadata and validate conversions.",
+      "Account for overflow and instrument-specific tick rules."
+    ],
+    "hints": [
+      "The wire has already chosen an exact discrete unit.",
+      "A book key needs stable equality as well as approximate numeric magnitude."
+    ],
+    "followUp": "How would you represent a venue with price-dependent tick sizes and negative prices?",
+    "references": [
+      {
+        "title": "Linux kernel · scaling the networking stack",
+        "url": "https://www.kernel.org/doc/html/latest/networking/scaling.html"
+      }
+    ],
+    "options": [
+      "Double precision with exact equality everywhere.",
+      "An integer tick count with explicit scale, range, and conversion rules.",
+      "A formatted decimal string sorted lexicographically.",
+      "A float rounded independently at each call site."
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "hft-benchmark",
+    "topic": "hft",
+    "title": "The load generator that hid the pause",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Benchmarking",
+      "Coordinated omission"
+    ],
+    "prompt": "A benchmark sends the next request only after the previous response. During a 100 ms server pause, it records one slow request and then returns to normal. Production traffic continues arriving during pauses. Explain the measurement error and design a test that reveals it without accidentally benchmarking an overloaded load generator.",
+    "solution": "The closed-loop generator suppresses arrivals while waiting for the paused response. It therefore omits the requests that would have arrived and queued during the pause. This is coordinated omission: the measured request population depends on server completion time.\n\nUse an independently scheduled arrival process representative of production. Measure latency from intended arrival time as well as actual submission, and retain load-generator scheduling lag. Record rejected and timed-out requests instead of dropping them from the histogram. Ensure the generator has sufficient CPU, networking, and outstanding-request capacity, or use multiple generators with a documented time base. Compare offered load, achieved throughput, queue depth, and latency across saturation. Corrected histograms can be informative, but a realistic arrival model and transparent boundaries remain necessary.",
+    "rubric": [
+      "Identify missing arrivals during the server pause.",
+      "Schedule requests independently and include queue delay and failed requests.",
+      "Measure load-generator lag and verify generator capacity."
+    ],
+    "hints": [
+      "How many observations would a production arrival stream create during 100 ms?",
+      "The start time used for latency can hide delay before submission."
+    ],
+    "followUp": "When is a closed-loop benchmark the correct workload model rather than a measurement flaw?",
+    "references": [
+      {
+        "title": "Linux kernel · scaling the networking stack",
+        "url": "https://www.kernel.org/doc/html/latest/networking/scaling.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-hot-path",
+    "topic": "hft",
+    "title": "Design the path that cannot wait",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 22,
+    "tags": [
+      "Risk checks",
+      "NUMA",
+      "Backpressure"
+    ],
+    "prompt": "Design a single-host market-data-to-order pipeline with a 10 μs application deadline at p99.9 under a specified burst envelope. Include sequencing, strategy, pre-trade risk, and outbound order handling. Discuss thread boundaries, memory ownership, allocation, NUMA placement, queue overflow, stale market data, and independent kill-switch behavior. Do not assume that lock-free automatically means faster.",
+    "solution": "Start with explicit timing boundaries and a bounded offered-load envelope; no finite system meets a fixed latency deadline under arbitrary overload. Prefer a short, ownership-oriented path: receive and sequence data, update a valid book, compute a decision, run mandatory risk checks, and encode/send. Keep related mutable state on one core where feasible; each extra queue introduces ownership transfer and waiting.\n\nPreallocate bounded buffers, warm critical pages, choose CPU/NIC queue affinity deliberately, and align memory placement with the executing NUMA node. Define loss, rejection, and recovery policies for every full queue; never silently trade on incomplete data. Risk checks must fail closed and cannot be bypassed by the optimized path. Provide a separately controlled kill switch and audit state transitions. Validate open-loop burst tests, hardware timestamps where available, and event-level tail traces. Tune only after measuring the complete path.",
+    "rubric": [
+      "Define deadline boundaries and bounded load assumptions.",
+      "Explain ownership, thread transitions, memory locality, and allocation policy.",
+      "Specify overflow, stale-data, and recovery behaviors.",
+      "Keep risk enforcement and independent kill-switch control in the design."
+    ],
+    "hints": [
+      "A queue is a latency distribution, not just a container.",
+      "What happens to safety when the optimized path becomes overloaded?"
+    ],
+    "followUp": "How would a hot standby take over without duplicating orders or trusting a stale risk position?",
+    "references": [
+      {
+        "title": "Linux kernel · scaling the networking stack",
+        "url": "https://www.kernel.org/doc/html/latest/networking/scaling.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-book-events",
+    "topic": "hft",
+    "title": "A book is reconstructed from events",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Market data",
+      "Order books"
+    ],
+    "prompt": "In a simplified order-level feed, explain how add, execute, and cancel events change a resting order and an aggregated price level.",
+    "solution": "Add creates an order with an identifier, side, price, and quantity. Execute or cancel reduces its remaining quantity; remove the order at zero. Adjust the price-level total by the same delta. Distinguish execution from cancellation for trade statistics even when their book-size effects match.",
+    "hints": [
+      "Track individual orders before aggregating.",
+      "Equal quantity deltas can represent different events."
+    ],
+    "rubric": [
+      "Maintain order identity.",
+      "Update remaining and level quantities consistently.",
+      "Separate executions from cancellations."
+    ],
+    "followUp": "Which additional message fields matter for a venue-specific replace event?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-spread-ticks",
+    "topic": "hft",
+    "title": "Measure a spread in integer ticks",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Order books",
+      "Tick size"
+    ],
+    "prompt": "A toy market has best bid 100.20 and best ask 100.26, with a fixed tick size of 0.01. How many ticks wide is the spread?",
+    "solution": "6 ticks: (100.26−100.20)/0.01. Prefer integer tick representations so rounding does not turn an exact spread into a fractional comparison. The question assumes a fixed tick regime rather than a variable venue schedule.",
+    "hints": [
+      "Subtract bid from ask.",
+      "Divide the difference by the tick size."
+    ],
+    "rubric": [
+      "Compute a 0.06 spread.",
+      "Convert to six ticks.",
+      "State the fixed-tick assumption."
+    ],
+    "followUp": "How would a variable tick schedule complicate normalization?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ],
+    "expected": "6"
+  },
+  {
+    "id": "hft-timestamp-unit",
+    "topic": "hft",
+    "title": "A timestamp requires a declared unit",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Market data",
+      "Timestamps"
+    ],
+    "prompt": "Nasdaq ITCH timestamps use nanoseconds since midnight for the feed's defined time basis. What must a decoder preserve before comparing them with another clock?",
+    "solution": "Preserve the specified units and time basis, including the date supplied by session context. A within-day counter alone is not a global instant. Comparing directly with a local monotonic clock or Unix milliseconds mixes incompatible representations.",
+    "hints": [
+      "The counter resets across trading days.",
+      "Units alone do not establish an epoch."
+    ],
+    "rubric": [
+      "Preserve nanoseconds.",
+      "Include session date and time basis.",
+      "Reject direct cross-clock subtraction."
+    ],
+    "followUp": "How would you represent events replayed across midnight?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ],
+    "options": [
+      "Only the displayed decimal digits",
+      "Unit, date context, and clock basis",
+      "Assume every integer is Unix time",
+      "Convert to float and ignore the origin"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "hft-wire-endian",
+    "topic": "hft",
+    "title": "Decode bytes before interpreting values",
+    "difficulty": "Foundation",
+    "format": "choice",
+    "minutes": 5,
+    "tags": [
+      "Binary protocols",
+      "Endianness"
+    ],
+    "prompt": "A simplified feed encodes a two-byte unsigned field in network byte order as 0x01 0x02. What value should a portable decoder produce?",
+    "solution": "258: the first byte is most significant, so 1×256+2. Decode with the protocol's byte order and field width rather than casting an arbitrary packet address to a native integer pointer, which also risks alignment errors.",
+    "hints": [
+      "Network byte order is big-endian.",
+      "Multiply the high byte by 256."
+    ],
+    "rubric": [
+      "Derive 258.",
+      "Respect the wire byte order.",
+      "Avoid native-layout casts."
+    ],
+    "followUp": "What bounds check is needed before reading this field?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ],
+    "options": [
+      "513",
+      "258",
+      "3",
+      "It depends on the receiving CPU"
+    ],
+    "correct": [
+      1
+    ]
+  },
+  {
+    "id": "hft-partial-cancel",
+    "topic": "hft",
+    "title": "A cancellation can leave an order alive",
+    "difficulty": "Foundation",
+    "format": "numeric",
+    "minutes": 5,
+    "tags": [
+      "Order books",
+      "Quantity accounting"
+    ],
+    "prompt": "A toy resting order starts with 900 units. An execution removes 250 and a partial cancellation removes 400. How many units remain?",
+    "solution": "250 units remain: 900−250−400. Retain the order because the remainder is positive, and reduce its price-level total by 650. Reject or reconcile an event that would make remaining quantity negative rather than silently wrapping an unsigned integer.",
+    "hints": [
+      "Execution and cancellation both reduce remaining size.",
+      "Remove the order only when remaining size reaches zero."
+    ],
+    "rubric": [
+      "Subtract both deltas.",
+      "Retain the positive remainder.",
+      "Guard against quantity underflow."
+    ],
+    "followUp": "How would a full-delete event differ from a partial cancellation?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ],
+    "expected": "250"
+  },
+  {
+    "id": "hft-fifo-model",
+    "topic": "hft",
+    "title": "Queue position depends on the matching rule",
+    "difficulty": "Foundation",
+    "format": "explanation",
+    "minutes": 5,
+    "tags": [
+      "Matching",
+      "Simulation"
+    ],
+    "prompt": "A simulator assumes price-time priority. Three orders at one price arrive in order A, B, C. Explain which receives a small aggressive fill first and why this rule cannot be assumed for every venue.",
+    "solution": "Under the stated model A receives quantity first, then B, then C after earlier quantities are exhausted. Real venues may use pro-rata or other allocation rules and special order attributes. The simulator must implement the selected venue's contract rather than infer it from feed arrival order alone.",
+    "hints": [
+      "The question states one matching policy.",
+      "Displayed order is not a universal venue contract."
+    ],
+    "rubric": [
+      "Apply FIFO within the level.",
+      "Exhaust earlier quantity first.",
+      "Identify venue-policy dependence."
+    ],
+    "followUp": "What information is missing when only aggregated price levels are available?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-snapshot-cut",
+    "topic": "hft",
+    "title": "A snapshot needs a precise replay boundary",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Recovery",
+      "Snapshots"
+    ],
+    "prompt": "A toy feed snapshot is labeled inclusive sequence 500. Buffered incrementals contain 498 through 506. Describe a safe recovery cutover and what must be checked before declaring the book current.",
+    "solution": "Install the snapshot, discard buffered events through 500, and apply 501 onward exactly once in sequence order. Verify continuity and that snapshot and incrementals share the same session and sequence domain. A snapshot without an unambiguous boundary cannot safely be merged by arrival time alone.",
+    "hints": [
+      "Inclusive means event 500 is already represented.",
+      "Sequence domains can reset at session boundaries."
+    ],
+    "rubric": [
+      "Resume from 501.",
+      "Verify continuity and session identity.",
+      "Avoid duplicate application."
+    ],
+    "followUp": "What should recovery do if buffered event 503 is missing?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-replace-id",
+    "topic": "hft",
+    "title": "Replacement changes an identity contract",
+    "difficulty": "Intermediate",
+    "format": "explanation",
+    "minutes": 8,
+    "tags": [
+      "Order lifecycle",
+      "Market data"
+    ],
+    "prompt": "A toy feed's replace message removes old order ID A and creates new ID B with a new price and quantity. Explain the index and price-level updates needed.",
+    "solution": "Remove A's remaining contribution from its old price level and erase its ID entry. Add B at the specified new price and quantity, updating the destination level. Apply the operation consistently; retaining A or treating replacement as an additional order would double-count liquidity.",
+    "hints": [
+      "The replacement quantity is a new quantity, not necessarily a delta.",
+      "Both ID and price indexes must agree."
+    ],
+    "rubric": [
+      "Remove the old contribution.",
+      "Install the new ID and size.",
+      "Preserve cross-index consistency."
+    ],
+    "followUp": "Why should replacement priority be modeled from venue rules rather than assumed?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-cancel-fill-race",
+    "topic": "hft",
+    "title": "Sending cancel is not cancellation confirmation",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Order lifecycle",
+      "Execution reports"
+    ],
+    "prompt": "A local system frees all reserved exposure as soon as it sends a cancel. A fill then arrives before cancel acknowledgement. Explain the state error and repair it.",
+    "solution": "A cancel request does not prove the order stopped being executable. Keep exposure reserved while cancellation is pending, incorporate fills, and release only the confirmed unexecuted remainder according to the venue protocol. Model requests and execution reports as distinct state transitions, including late and duplicate messages.",
+    "hints": [
+      "The venue may match before processing cancellation.",
+      "Pending cancel is still an exposed state."
+    ],
+    "rubric": [
+      "Retain pending-cancel exposure.",
+      "Apply fills before releasing remainder.",
+      "Reconcile acknowledgements and duplicates."
+    ],
+    "followUp": "How would you handle a cancel rejection for an already filled order?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-queue-wait",
+    "topic": "hft",
+    "title": "Service speed leaves waiting time",
+    "difficulty": "Intermediate",
+    "format": "numeric",
+    "minutes": 8,
+    "tags": [
+      "Queueing",
+      "Latency"
+    ],
+    "prompt": "In a deterministic toy queue, six jobs are ahead of an arriving job and each takes exactly 3 microseconds. No job is in progress. How long until the arriving job starts, in microseconds?",
+    "solution": "18 microseconds: six preceding jobs times three. Its own service time is excluded because the question asks for start time. Real bursty arrivals and variable service times require a distribution rather than this fixed calculation.",
+    "hints": [
+      "Only count jobs ahead.",
+      "Start latency excludes the arriving job's service."
+    ],
+    "rubric": [
+      "Compute 6×3.",
+      "Exclude own service.",
+      "State the deterministic assumption."
+    ],
+    "followUp": "What is its completion latency under the same assumptions?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ],
+    "expected": "18"
+  },
+  {
+    "id": "hft-redundant-feeds",
+    "topic": "hft",
+    "title": "Two arrivals can represent one event",
+    "difficulty": "Intermediate",
+    "format": "design",
+    "minutes": 8,
+    "tags": [
+      "Market data",
+      "Redundancy"
+    ],
+    "prompt": "Two independent delivery paths carry the same logical feed events. Design merging when either copy can arrive first and packets can be duplicated or reordered.",
+    "solution": "Normalize both paths into the same session and sequence space, retain the first valid copy for each sequence, and apply events in order. Bound the reorder window and expose unresolved gaps. Compare divergent copies as an integrity fault rather than arbitrarily accepting conflicting payloads under one sequence.",
+    "hints": [
+      "Delivery paths do not create two logical events.",
+      "Equal sequence numbers should identify compatible content."
+    ],
+    "rubric": [
+      "Deduplicate across paths.",
+      "Preserve sequence order with bounded buffering.",
+      "Detect gaps and payload disagreement."
+    ],
+    "followUp": "How would a session reset invalidate retained deduplication state?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-exposure-check",
+    "topic": "hft",
+    "title": "A limit check must include pending work",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Risk systems",
+      "Concurrency"
+    ],
+    "prompt": "Two threads independently see 70 units of reserved exposure under a 100-unit limit, then each admits an order for 20. Explain the race and an admission protocol.",
+    "solution": "Both observe the same spare capacity, producing 110 units after admission. Serialize check-and-reserve or use a correct atomic conditional update. Include pending orders in the reservation, release only confirmed reductions, and make duplicate events idempotent. The system invariant is checked against total admitted exposure.",
+    "hints": [
+      "The check and reservation form one logical operation.",
+      "Pending orders already consume capacity."
+    ],
+    "rubric": [
+      "Derive the 110-unit violation.",
+      "Make admission atomic.",
+      "Reconcile reservations with authoritative events."
+    ],
+    "followUp": "What additional dimensions complicate a portfolio-wide limit?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-parser-length",
+    "topic": "hft",
+    "title": "A valid type byte is not a valid message",
+    "difficulty": "Intermediate",
+    "format": "multi_select",
+    "minutes": 8,
+    "tags": [
+      "Binary parsing",
+      "Validation"
+    ],
+    "prompt": "A parser receives a truncated buffer whose first byte is a recognized message type. Which checks are required before accessing its fields?",
+    "solution": "Validate the complete expected message length, each variable-length boundary when present, and supported protocol layout before reading. A recognized tag alone proves no following bytes exist. Parse with explicit widths and endianness and reject inconsistent lengths without out-of-bounds access.",
+    "hints": [
+      "The discriminator does not guarantee the payload exists.",
+      "Check bounds before reading, not afterward."
+    ],
+    "rubric": [
+      "Require complete bounds checks.",
+      "Validate the selected layout.",
+      "Preserve explicit wire decoding."
+    ],
+    "followUp": "How can fuzzing exercise truncation at every byte boundary?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ],
+    "options": [
+      "Check the expected length before field reads",
+      "Trust the tag and cast immediately",
+      "Validate variable-length boundaries",
+      "Assume adjacent memory contains missing bytes"
+    ],
+    "correct": [
+      0,
+      2
+    ]
+  },
+  {
+    "id": "hft-book-invariant",
+    "topic": "hft",
+    "title": "A negative level is a reconstruction alarm",
+    "difficulty": "Intermediate",
+    "format": "debug",
+    "minutes": 8,
+    "tags": [
+      "Order books",
+      "Invariants"
+    ],
+    "prompt": "An order-level reconstruction produces a negative total at one price. Give likely causes and explain why clamping to zero can hide a more serious fault.",
+    "solution": "Possible causes include duplicate reductions, missed adds, wrong replacement semantics, or session mixing. Clamping masks divergence while leaving order-level and price-level state inconsistent. Stop treating the state as authoritative, record the failing event and invariants, and recover from a validated boundary.",
+    "hints": [
+      "An aggregate should equal the sum of remaining orders.",
+      "Repairing one number does not restore missing history."
+    ],
+    "rubric": [
+      "List plausible event faults.",
+      "Check order-to-level conservation.",
+      "Recover instead of masking divergence."
+    ],
+    "followUp": "What minimal replay fixture would reproduce the first invariant violation?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-clock-negative",
+    "topic": "hft",
+    "title": "A negative latency reveals incomparable clocks",
+    "difficulty": "Advanced",
+    "format": "debug",
+    "minutes": 12,
+    "tags": [
+      "Clock synchronization",
+      "Measurement"
+    ],
+    "prompt": "Subtracting a venue timestamp from a local receive timestamp sometimes gives negative latency. Explain possible measurement faults and a trustworthy reporting policy.",
+    "solution": "Clock offset, different epochs or units, synchronization error, and timestamp placement can invalidate the subtraction. Document both timestamp points and clock domains, monitor synchronization uncertainty, and report one-way latency only when the bound supports it. Use local monotonic intervals for local processing durations.",
+    "hints": [
+      "The clocks may disagree before any packet travels.",
+      "Timestamp placement includes different portions of the path."
+    ],
+    "rubric": [
+      "Check domains and units.",
+      "Quantify synchronization uncertainty.",
+      "Separate one-way and local interval metrics."
+    ],
+    "followUp": "Why does a round-trip measurement avoid some clock-offset problems?",
+    "references": [
+      {
+        "title": "Linux manual · clock_gettime",
+        "url": "https://man7.org/linux/man-pages/man2/clock_gettime.2.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-percentile-sum",
+    "topic": "hft",
+    "title": "Percentiles do not add like budgets",
+    "difficulty": "Advanced",
+    "format": "explanation",
+    "minutes": 12,
+    "tags": [
+      "Latency",
+      "Statistics"
+    ],
+    "prompt": "Three pipeline stages each report a 10-microsecond p99. Why is end-to-end p99 not necessarily 30 microseconds?",
+    "solution": "Each percentile summarizes a separate distribution, and slow events need not coincide across stages. Correlation and per-request stage combinations determine the end-to-end tail. Measure total latency for the same requests and use aligned traces to explain it; summing selected percentiles is not a percentile calculation.",
+    "hints": [
+      "The slowest one percent may be different requests.",
+      "Preserve per-request correlation."
+    ],
+    "rubric": [
+      "Reject percentile addition.",
+      "Discuss dependence between stages.",
+      "Measure aligned end-to-end samples."
+    ],
+    "followUp": "When can a deterministic worst-case bound be summed safely?",
+    "references": [
+      {
+        "title": "Google SRE Book · monitoring distributions",
+        "url": "https://sre.google/sre-book/monitoring-distributed-systems/"
+      }
+    ]
+  },
+  {
+    "id": "hft-nic-affinity",
+    "topic": "hft",
+    "title": "The packet crossed sockets before the strategy",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "NUMA",
+      "NIC affinity"
+    ],
+    "prompt": "A NIC is attached to one NUMA node while its receive thread and strategy run on another. Plan a latency investigation before pinning everything to one core.",
+    "solution": "Map device locality, receive queues, IRQ placement, worker affinity, and memory allocation. Measure cross-node traffic and tail latency under realistic load, then co-locate appropriate stages and allocate local memory. Leave capacity for interrupts and housekeeping; pinning without measuring can concentrate contention or starve required work.",
+    "hints": [
+      "Follow both packet processing and memory placement.",
+      "Affinity can trade migration for contention."
+    ],
+    "rubric": [
+      "Map locality end to end.",
+      "Measure remote access and tails.",
+      "Validate placement under load."
+    ],
+    "followUp": "How could receive-side scaling alter the observed path?",
+    "references": [
+      {
+        "title": "Linux kernel · network scaling and locality",
+        "url": "https://www.kernel.org/doc/html/latest/networking/scaling.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-allocation-jitter",
+    "topic": "hft",
+    "title": "The average allocation cost misses the pause",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Allocation",
+      "Latency"
+    ],
+    "prompt": "A strategy allocates a small object per event and has rare latency spikes. Design an experiment to test allocation as the cause without attributing every outlier to it.",
+    "solution": "Measure allocation rate and event-level latency with correlated allocator or runtime events. Compare equivalent workloads using bounded preallocated storage, keeping input rates and other settings fixed. Include pool exhaustion behavior and memory footprint; report full distributions and investigate outliers that remain after allocation changes.",
+    "hints": [
+      "Correlation needs matching event times.",
+      "Preallocation introduces a capacity policy."
+    ],
+    "rubric": [
+      "Collect aligned evidence.",
+      "Compare a controlled allocation change.",
+      "Define exhaustion and remaining-outlier analysis."
+    ],
+    "followUp": "Why can an unbounded object pool only move the memory problem?",
+    "references": [
+      {
+        "title": "Go diagnostics guide · profiling",
+        "url": "https://go.dev/doc/diagnostics"
+      }
+    ]
+  },
+  {
+    "id": "hft-replay-determinism",
+    "topic": "hft",
+    "title": "A replay needs more than market packets",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Replay",
+      "Determinism"
+    ],
+    "prompt": "Design a replay harness that reproduces strategy decisions when decisions also depend on timers, configuration changes, and execution reports.",
+    "solution": "Capture every decision-relevant input with a defined ordering, replace wall-clock reads with a replay clock, and version configuration and strategy artifacts. Feed execution reports and timer firings through the same deterministic event model. Compare state hashes and emitted actions, while documenting any intentionally nondeterministic component.",
+    "hints": [
+      "Market data is only one input stream.",
+      "Real time must not leak into replay decisions."
+    ],
+    "rubric": [
+      "Record all relevant inputs.",
+      "Control time and ordering.",
+      "Compare versioned state and output."
+    ],
+    "followUp": "How would concurrent decision paths complicate reproducible replay?",
+    "references": [
+      {
+        "title": "LMAX · event sourcing and deterministic business logic",
+        "url": "https://martinfowler.com/articles/lmax.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-ring-overflow",
+    "topic": "hft",
+    "title": "A full queue needs an explicit consequence",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Queues",
+      "Overload"
+    ],
+    "prompt": "A bounded market-data ring fills while a consumer stalls. Compare blocking, dropping events, and declaring the local book invalid.",
+    "solution": "Blocking may move loss upstream to socket buffers. Dropping incremental events silently corrupts reconstruction. For a stateful book, surface overflow, stop decisions based on invalid state, and initiate protocol-aware recovery; choose any permitted coalescing only for data whose semantics tolerate it. Measure overflow count and recovery duration.",
+    "hints": [
+      "Incremental updates are not interchangeable samples.",
+      "Pressure moves through the whole receive path."
+    ],
+    "rubric": [
+      "Trace upstream effects.",
+      "Reject silent incremental loss.",
+      "Define invalidation and recovery."
+    ],
+    "followUp": "When could replacing old snapshots with the newest snapshot be safe?",
+    "references": [
+      {
+        "title": "Linux kernel · circular buffers",
+        "url": "https://docs.kernel.org/core-api/circular-buffers.html"
+      }
+    ]
+  },
+  {
+    "id": "hft-risk-restart",
+    "topic": "hft",
+    "title": "A restart must not forget live orders",
+    "difficulty": "Advanced",
+    "format": "design",
+    "minutes": 12,
+    "tags": [
+      "Recovery",
+      "Risk systems"
+    ],
+    "prompt": "A process restarts with an empty local order map while venue orders remain live. Define safe recovery before new order admission.",
+    "solution": "Treat local exposure as unknown until reconciled. Restore durable intent and acknowledgements, query or replay authoritative venue state, and resolve ambiguous orders using stable identifiers. Rebuild reservations conservatively and gate new admission until required invariants hold; process restart does not cancel remote orders automatically.",
+    "hints": [
+      "The venue's lifetime differs from the process lifetime.",
+      "Unknown is not equivalent to zero."
+    ],
+    "rubric": [
+      "Gate admission during uncertainty.",
+      "Reconcile authoritative live orders.",
+      "Restore conservative exposure accounting."
+    ],
+    "followUp": "What should happen if the venue cannot currently provide complete state?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-failover-orders",
+    "topic": "hft",
+    "title": "The backup must not become a second sender",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Failover",
+      "Fencing"
+    ],
+    "prompt": "Design active-passive order submission when the active process can pause and later resume after the backup takes over.",
+    "solution": "Use an authority or venue/session mechanism that prevents stale senders from submitting after takeover, and reconcile live orders and sequence state before admission. A heartbeat timeout alone cannot prove the old process stopped. Test pause, partition, and delayed-packet scenarios, and specify availability loss when exclusive authority cannot be established.",
+    "hints": [
+      "Failure detection is suspicion.",
+      "The old process can wake up after takeover."
+    ],
+    "rubric": [
+      "Enforce exclusive submission authority.",
+      "Reconcile state before trading resumes.",
+      "Test stale-process recovery."
+    ],
+    "followUp": "Which component must reject a stale authority token for fencing to work?",
+    "references": [
+      {
+        "title": "Raft · leadership and failure model",
+        "url": "https://raft.github.io/raft.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-kill-switch",
+    "topic": "hft",
+    "title": "Stopping intake is not cancelling exposure",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Operational controls",
+      "Order lifecycle"
+    ],
+    "prompt": "Design a system kill switch that distinguishes blocking new orders from reducing already-live exposure. Include partial failures and an observable completion condition.",
+    "solution": "Atomically disable new admission, issue authorized cancellations for known live orders, and continue processing fills and acknowledgements. Track outstanding and ambiguous orders until reconciled with venue state. Report incomplete or unreachable cancellations explicitly; returning from the local switch handler is not proof that remote exposure is gone.",
+    "hints": [
+      "There are local and remote completion boundaries.",
+      "Fills can race with cancellations."
+    ],
+    "rubric": [
+      "Stop admission first.",
+      "Reconcile all live and ambiguous orders.",
+      "Define observable remote completion and failures."
+    ],
+    "followUp": "How should the switch behave if one venue connection is unavailable?",
+    "references": [
+      {
+        "title": "Nasdaq TotalView-ITCH specification",
+        "url": "https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf"
+      }
+    ]
+  },
+  {
+    "id": "hft-audit-boundary",
+    "topic": "hft",
+    "title": "Fast submission and durable evidence compete",
+    "difficulty": "Expert",
+    "format": "design",
+    "minutes": 18,
+    "tags": [
+      "Auditability",
+      "Durability"
+    ],
+    "prompt": "A system must retain durable evidence of every admitted order intent. Compare acknowledging intent before and after durable logging, and explain crash ambiguity.",
+    "solution": "Acknowledging before durable logging can lose the evidence on crash. Logging before acknowledgement adds latency but establishes recoverable intent, though a crash can still leave remote submission uncertain. Use stable IDs, durable state transitions, and reconciliation to connect intent, submission, and venue outcomes; state the precise durability boundary.",
+    "hints": [
+      "A remote side effect cannot share a local disk transaction.",
+      "Durability and outcome certainty are separate."
+    ],
+    "rubric": [
+      "State the logging acknowledgement boundary.",
+      "Preserve stable intent identity.",
+      "Reconcile uncertain remote outcomes."
+    ],
+    "followUp": "How could group commit change throughput and acknowledgement latency?",
+    "references": [
+      {
+        "title": "PostgreSQL · write-ahead logging",
+        "url": "https://www.postgresql.org/docs/current/wal-intro.html"
+      }
+    ]
+  }
+]

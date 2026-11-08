@@ -1,0 +1,316 @@
+{
+  "id": "cpp",
+  "topic": "cpp",
+  "title": "C++: lifetimes, abstractions, and concurrency",
+  "description": "Study C++20 ownership, object lifetime, generic code, memory ordering, and performance through explicit invariants and local experiments.",
+  "lessons": [
+    {
+      "id": "lesson-cpp-storage-lifetime",
+      "moduleId": "cpp-1",
+      "kind": "concept",
+      "title": "Storage is not an object lifetime",
+      "summary": "Distinguish allocated storage from a live object",
+      "objectives": [
+        "Distinguish allocated storage from a live object.",
+        "Track the lifetime of references and views."
+      ],
+      "body": "## Core idea\n\nStorage is a region of bytes; an object has a lifetime governed by construction and destruction rules. A pointer can still contain an address after the object at that address has died. Non-owning views and references do not extend arbitrary owners. Treat every interface returning a reference as a claim about where the object lives and how callers are prevented from outliving it.\n\n## Worked example\n\nA view into a local string dangles at function return. A view into a caller-owned string can remain valid only while that string exists and operations do not invalidate the referenced character storage.\n\n## Try it\n\nClassify returns of a local value, a reference to a local, a view into a parameter, and a view into static storage. Write the required caller contract for each valid case.\n\n## Check your work\n\nReturning a value is ordinarily safe because it transfers or constructs an owned result. Explain validity by lifetime and invalidation rules, not by whether the old bytes still happen to be visible.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 15,
+      "questionIds": [
+        "cpp-span-owner",
+        "cpp-const-pointer",
+        "cpp-sizeof-array",
+        "cpp-object-lifetime"
+      ]
+    },
+    {
+      "id": "lesson-cpp-raii-resources",
+      "moduleId": "cpp-1",
+      "kind": "concept",
+      "title": "RAII and exception-safe resource ownership",
+      "summary": "Make cleanup follow object lifetime",
+      "objectives": [
+        "Make cleanup follow object lifetime.",
+        "State the exception guarantee of a multi-step operation."
+      ],
+      "body": "## Core idea\n\nRAII ties resource release to an owning object destructor. Files, locks, memory, and sockets all benefit from a single owner with deterministic cleanup. A basic exception guarantee preserves valid invariants; a strong guarantee leaves observable state unchanged on failure. Destructors should normally avoid throwing. Smart pointers express ownership, while raw pointers can still be useful non-owning observers.\n\n## Worked example\n\nAcquire a resource into a unique_ptr or a dedicated handle wrapper before performing later operations that might fail. If a later constructor throws, already-constructed members are destroyed. A bare resource acquired before that ownership transfer may leak.\n\n## Try it\n\nDesign a movable file-handle wrapper with a clear invalid state. Then sketch replacing a configuration by constructing a candidate first and committing only after validation.\n\n## Check your work\n\nEvery successful acquisition has one owner and one release path. Move transfers ownership, moved-from destruction is safe, and failure does not leave a half-updated configuration.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 15,
+      "questionIds": [
+        "cpp-raii-exit",
+        "cpp-unique-move",
+        "cpp-exception-guarantee"
+      ]
+    },
+    {
+      "id": "lesson-cpp-value-move",
+      "moduleId": "cpp-1",
+      "kind": "concept",
+      "title": "Value semantics and moved-from objects",
+      "summary": "Explain copying versus moving without assuming a move is free",
+      "objectives": [
+        "Explain copying versus moving without assuming a move is free.",
+        "Use the rule of zero for ordinary resource-containing types."
+      ],
+      "body": "## Core idea\n\nA copy creates another value according to its type contract. A move permits transferring resources from an expiring object, but the actual operation is type-defined. std::move is a cast that enables move overload resolution; it does not itself move bytes. Prefer members that already manage resources so compiler-generated special members are sufficient. A moved-from standard library object remains valid but its exact value is generally unspecified unless documented.\n\n## Worked example\n\nA struct holding a string and vector can usually rely on their constructors and destructors. Adding a manual destructor unnecessarily can change implicit move generation and create surprising performance or correctness consequences.\n\n## Try it\n\nTrace a vector of records through copy construction, move construction, and destruction. Identify why storing a borrowed pointer inside the record changes the ownership story.\n\n## Check your work\n\nDo not read a specific old string value after moving from it. Explain which operations remain valid and why using std::move on a const value may still select a copy.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 15,
+      "questionIds": [
+        "cpp-move-cast",
+        "cpp-rule-zero",
+        "cpp-string-sso",
+        "cpp-noexcept-vector"
+      ]
+    },
+    {
+      "id": "lesson-cpp-view",
+      "title": "A view outlives its owner",
+      "summary": "Object lifetime · string_view",
+      "body": "## The problem to understand\n\nA function returns a `std::string_view` into a local string. What is the strongest correct statement about the caller’s read? Assume C++20. The fact that this example might print the expected bytes on your machine is not a guarantee.\n\n```cpp\nstd::string_view label() {\n    std::string text = \"market-data\";\n    return text;\n}\nauto v = label();\nstd::cout << v;\n```\n\n## The mental model\n\nThe local string is destroyed at function exit, so the returned view does not designate a live character sequence. Reading through it has undefined behavior. `std::string_view` is a non-owning pointer-and-length abstraction; it does not extend the owner’s lifetime.\n\nReturn `std::string` to transfer an owned result, or return a view only into storage with a documented lifetime that exceeds every use. Small-string optimization does not rescue the local object’s lifetime; it can simply change where the invalid storage was located.\n\n## Check your understanding\n\n- Identify string_view as non-owning.\n- Locate destruction of the local string.\n- Choose an owned result or a valid external lifetime.\n\n## Think one step further\n\nIs returning a view into a string parameter safe when the caller passes a temporary?\n\n## Primary reading\n\n- [C++ working draft](https://eel.is/c++draft/)",
+      "minutes": 4,
+      "questionIds": [
+        "cpp-view"
+      ],
+      "moduleId": "cpp-1",
+      "kind": "workshop",
+      "objectives": [
+        "Identify string_view as non-owning.",
+        "Locate destruction of the local string."
+      ]
+    },
+    {
+      "id": "lesson-cpp-containers-algorithms",
+      "moduleId": "cpp-2",
+      "kind": "concept",
+      "title": "Container choice follows invalidation and access",
+      "summary": "Select containers using access and invalidation requirements",
+      "objectives": [
+        "Select containers using access and invalidation requirements.",
+        "Separate capacity from the number of live elements."
+      ],
+      "body": "## Core idea\n\nA vector provides contiguous elements and cheap indexed access; growth can relocate them. Linked structures avoid some relocation but add allocation, pointer chasing, and different invalidation rules. Reserve changes vector capacity, not its size, so it does not construct elements. Standard algorithms express transformations independently of a particular container, but their iterator and ordering requirements still matter.\n\n## Worked example\n\nReserving space for 100 records does not make records[50] a valid element when size is zero. Appending constructs elements. Retaining pointers across append is valid only under the relevant documented invalidation conditions.\n\n## Try it\n\nChoose a representation for records appended in bursts and scanned repeatedly. Document how callers obtain stable identifiers even if the vector relocates.\n\n## Check your work\n\nIndices or external IDs survive some changes that raw element pointers do not, but erasure and reordering need their own policy. Justify a linked list only using measured or required behavior.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 15,
+      "questionIds": [
+        "cpp-vector-reserve",
+        "cpp-initializer-list",
+        "cpp-unordered-rehash"
+      ]
+    },
+    {
+      "id": "lesson-cpp-generic-contracts",
+      "moduleId": "cpp-2",
+      "kind": "concept",
+      "title": "Templates, concepts, and runtime polymorphism",
+      "summary": "Express generic requirements with C++20 concepts",
+      "objectives": [
+        "Express generic requirements with C++20 concepts.",
+        "Choose dynamic dispatch when runtime heterogeneity is required."
+      ],
+      "body": "## Core idea\n\nTemplates generate code for types meeting their requirements. Concepts make syntactic constraints visible and improve diagnostics, but cannot prove all semantic promises such as comparator transitivity. Virtual interfaces support runtime substitution and heterogeneous ownership. If deletion through a base pointer is allowed, that destruction contract must be safe. Dispatch and ownership are separate design decisions.\n\n## Worked example\n\nA generic sorting helper may require a comparator, yet a comparator that changes its answer over time still breaks the algorithm contract. A virtual sink registry can select concrete destinations at runtime without templating every caller.\n\n## Try it\n\nSketch a constrained record encoder and a polymorphic output sink. List semantic requirements that cannot be enforced by a concept alone.\n\n## Check your work\n\nExplain which decisions occur at compile time and runtime. Include object destruction, error propagation, and comparator or encoding determinism in the contract.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 15,
+      "questionIds": [
+        "cpp-virtual-default",
+        "cpp-lambda-lifetime"
+      ]
+    },
+    {
+      "id": "lesson-cpp-virtual-destructor",
+      "title": "Deleting through the wrong contract",
+      "summary": "RAII · Polymorphism",
+      "body": "## The problem to understand\n\nThe program manages a derived object through `std::unique_ptr<Base>`. Explain the lifetime defect, why using a smart pointer does not fix it, and two valid base-class designs depending on whether deletion through the base should be supported.\n\n```cpp\nstruct Base {\n    virtual void run() = 0;\n    ~Base() = default;\n};\nstruct Derived : Base {\n    std::vector<int> data;\n    void run() override {}\n};\nstd::unique_ptr<Base> p = std::make_unique<Derived>();\n```\n\n## The mental model\n\nThe default deleter invokes `delete` on a `Base*`. In this ordinary hierarchy, deleting a derived object through a base pointer without a virtual destructor has undefined behavior. Ownership management and correct polymorphic destruction are separate requirements.\n\nIf polymorphic deletion is part of the API, give Base a public virtual destructor, usually `virtual ~Base() = default;`. If deletion through Base should be forbidden, a protected non-virtual destructor can enforce that contract, with ownership retained through a suitable concrete type or deliberate custom deleter. A virtual method elsewhere in the class does not make the destructor virtual.\n\n## Check your understanding\n\n- Identify deletion through Base* as the problematic operation.\n- Explain the limitation of unique_ptr’s default deleter.\n- Offer public virtual or protected non-virtual destructor designs with appropriate ownership.\n\n## Think one step further\n\nWhy can shared_ptr<Base> constructed directly from make_shared<Derived>() behave differently?\n\n## Primary reading\n\n- [C++ working draft](https://eel.is/c++draft/)",
+      "minutes": 4,
+      "questionIds": [
+        "cpp-virtual-destructor"
+      ],
+      "moduleId": "cpp-2",
+      "kind": "workshop",
+      "objectives": [
+        "Identify deletion through Base* as the problematic operation.",
+        "Explain the limitation of unique_ptr’s default deleter."
+      ]
+    },
+    {
+      "id": "lesson-cpp-invalidation",
+      "title": "The iterator that survived until it did not",
+      "summary": "Containers · Invalidation",
+      "body": "## The problem to understand\n\nRepair this loop so that every original even element is duplicated exactly once at the end of the vector. The implementation must be correct for any initial capacity. Explain why reserving more capacity is not, by itself, a complete repair for a range-for loop.\n\n```cpp\nstd::vector<int> v = {1, 2, 3, 4};\nfor (const auto& x : v) {\n    if (x % 2 == 0) v.push_back(x);\n}\n```\n\n## The mental model\n\nRecord the original size, iterate by index only up to that size, and copy the current value before any push: `const auto n = v.size(); for (size_t i=0; i<n; ++i) { auto x=v[i]; if(x%2==0) v.push_back(x); }`. No reference or iterator is retained across a potential reallocation, and newly appended elements are excluded.\n\nReallocation invalidates all element iterators and references. Even without reallocation, push_back invalidates the old past-the-end iterator. A range-for typically captures both begin and end before iteration, so making capacity large enough does not preserve that cached end iterator. A two-pass collection into a second vector is also valid.\n\n## Check your understanding\n\n- Restrict traversal to the original size.\n- Avoid retaining a reference across push_back.\n- Explain both reallocation and past-the-end invalidation.\n\n## Think one step further\n\nWhat exception-safety guarantee does the repaired function offer if an allocation fails halfway through?\n\n## Primary reading\n\n- [C++ working draft](https://eel.is/c++draft/)",
+      "minutes": 5,
+      "questionIds": [
+        "cpp-invalidation"
+      ],
+      "moduleId": "cpp-2",
+      "kind": "workshop",
+      "objectives": [
+        "Restrict traversal to the original size.",
+        "Avoid retaining a reference across push_back."
+      ]
+    },
+    {
+      "id": "lesson-cpp-memory-model",
+      "moduleId": "cpp-3",
+      "kind": "concept",
+      "title": "Data races and happens-before",
+      "summary": "Separate atomicity from visibility of other memory",
+      "objectives": [
+        "Separate atomicity from visibility of other memory.",
+        "Build a happens-before argument for publication."
+      ],
+      "body": "## Core idea\n\nConflicting non-atomic accesses from different threads without the required ordering can create a data race and undefined behavior. An atomic flag protects its own access; additional memory-order relationships are needed to publish ordinary payload data. Mutex unlock and later successful lock provide a standard synchronization mechanism. Release/acquire works only through the appropriate observed atomic operations.\n\n## Worked example\n\nA producer fills a payload then release-stores ready. A consumer that acquire-loads that publication can read the payload under a valid one-shot lifetime protocol. Replacing both operations with relaxed does not provide that publication edge.\n\n## Try it\n\nDraw an event graph for a one-shot mailbox. Add every write, flag operation, read, and object destruction. Then consider a producer trying to reuse the mailbox immediately.\n\n## Check your work\n\nThe one-shot proof includes initialization and lifetime. Reuse requires a return ownership edge or another protocol; observing ready once does not make indefinite concurrent mutation safe.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 15,
+      "questionIds": [
+        "cpp-relaxed-counter",
+        "cpp-condition-predicate"
+      ]
+    },
+    {
+      "id": "lesson-cpp-sanitizers-profiling",
+      "moduleId": "cpp-3",
+      "kind": "workshop",
+      "title": "Use tools to challenge a correctness claim",
+      "summary": "Match sanitizers to likely defect classes",
+      "objectives": [
+        "Match sanitizers to likely defect classes.",
+        "Keep performance experiments separate from instrumented diagnostics."
+      ],
+      "body": "## Core idea\n\nAddress and undefined-behavior sanitizers can expose many invalid accesses and operations; thread sanitizers target executed data races. Their coverage is useful but incomplete. A sanitizer-clean run is evidence about tested executions, not a proof that every lifetime or synchronization contract holds. Instrumentation also changes execution costs, so performance results need an appropriate uninstrumented build.\n\n## Worked example\n\nAn iterator invalidation bug may pass a small test because capacity never grows. Force reallocation and test erasure boundaries. A thread test should exercise shutdown and contention rather than only a single successful operation.\n\n## Try it\n\nCreate a local validation matrix for a queue: boundary tests, address/undefined checks, race checks where supported, and a release benchmark. State a distinct purpose for each.\n\n## Check your work\n\nRecord compiler, standard mode, options, and workload. Do not compare sanitizer runtime to a release result as though the difference measured an algorithm improvement.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 25,
+      "questionIds": [
+        "cpp-signed-overflow"
+      ]
+    },
+    {
+      "id": "lesson-cpp-publish",
+      "title": "The flag that protects nothing else",
+      "summary": "Memory model · Atomics",
+      "body": "## The problem to understand\n\nA producer writes an ordinary payload, then sets `ready`. A consumer spins until ready is true and reads the payload. There is one producer, one consumer, one publication, and the payload remains alive. Explain why the shown relaxed protocol is invalid, and provide the minimum straightforward ordering repair. Describe exactly which load must observe which store.\n\n```cpp\n// producer\npayload = 42;\nready.store(true, std::memory_order_relaxed);\n\n// consumer\nwhile (!ready.load(std::memory_order_relaxed)) {}\nuse(payload);\n```\n\n## The mental model\n\nAtomicity of the flag does not establish ordering for the non-atomic payload. With relaxed operations there is no synchronizes-with edge between the threads, so the conflicting payload accesses are not ordered by happens-before and the program has a data race.\n\nUse a release store to ready after initialization and an acquire load in the successful consumer check. When that acquire reads the value from the release store, initialization happens before the payload read. The failed polling loads need not themselves establish publication. This proof assumes the payload is not concurrently overwritten and remains alive. Seq_cst also works, but adds an ordering requirement that the one-shot protocol does not need.\n\n## Check your understanding\n\n- Separate the atomic flag from the non-atomic payload accesses.\n- Use a release store and an acquire observation of it.\n- State the one-shot, lifetime, and no-overwrite assumptions.\n\n## Think one step further\n\nCan the consumer safely reset ready with Relaxed and let the producer overwrite payload?\n\n## Primary reading\n\n- [C++ working draft · data races](https://eel.is/c++draft/intro.races)",
+      "minutes": 5,
+      "questionIds": [
+        "cpp-publish"
+      ],
+      "moduleId": "cpp-3",
+      "kind": "workshop",
+      "objectives": [
+        "Separate the atomic flag from the non-atomic payload accesses.",
+        "Use a release store and an acquire observation of it."
+      ]
+    },
+    {
+      "id": "lesson-cpp-false-sharing",
+      "title": "Correct atomics, terrible scaling",
+      "summary": "Cache coherence · False sharing",
+      "body": "## The problem to understand\n\nTwo threads repeatedly increment two different `std::atomic<uint64_t>` counters located next to each other. Throughput drops when the threads run on different cores. Assume the counters share a coherence line. Which interventions or claims are valid? Select all that apply.\n\n## The mental model\n\nIndependent atomic variables can still share a coherence line. Each core’s write requires ownership of that line, creating coherence traffic even though the program has no data race. Separating the hot counters onto distinct target-appropriate cache lines can reduce that traffic. Thread-local accumulation with occasional aggregation can reduce it further when delayed visibility is acceptable.\n\nRelaxed ordering may reduce ordering constraints but does not eliminate the need for exclusive line ownership on writes. A fixed padding size is a platform assumption, not a universal property. Measure on the intended hardware and consider object alignment and array layout as well as field spacing.\n\n## Check your understanding\n\n- Distinguish false sharing from a data race.\n- Recognize padding/alignment and local aggregation as possible repairs.\n- Explain why Relaxed alone does not remove coherence ownership traffic.\n\n## Think one step further\n\nWhy might padding every object make an entirely different workload slower?\n\n## Primary reading\n\n- [C++ working draft](https://eel.is/c++draft/)",
+      "minutes": 4,
+      "questionIds": [
+        "cpp-false-sharing"
+      ],
+      "moduleId": "cpp-3",
+      "kind": "workshop",
+      "objectives": [
+        "Distinguish false sharing from a data race.",
+        "Recognize padding/alignment and local aggregation as possible repairs."
+      ]
+    },
+    {
+      "id": "lesson-cpp-layout-allocation",
+      "moduleId": "cpp-4",
+      "kind": "concept",
+      "title": "Data layout and allocation budgets",
+      "summary": "Relate layout to locality without sacrificing lifetime correctness",
+      "objectives": [
+        "Relate layout to locality without sacrificing lifetime correctness.",
+        "Account for allocation and alignment in a hot path."
+      ],
+      "body": "## Core idea\n\nContiguous scans can exploit locality and prefetching, while pointer-rich graphs may serialize cache misses. Separating hot fields from cold metadata can reduce bytes touched per operation. Alignment can prevent some false sharing, but padding also increases footprint. Custom pools trade allocation control for lifetime and reclamation complexity; use them only with a clear ownership model and measured need.\n\n## Worked example\n\nA scan that uses only price and quantity pays unnecessary bandwidth if every record also embeds a large text field. Keeping cold text elsewhere can reduce traffic, provided the associated identifiers remain valid.\n\n## Try it\n\nCompare an array-of-structs and a split hot/cold layout for a scan workload. Predict bytes read per record and include construction and teardown costs in a separate measurement.\n\n## Check your work\n\nBoth implementations return identical results. Report whether the bottleneck is bandwidth, latency, or compute, and do not assume a smaller object automatically produces a faster complete application.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 15,
+      "questionIds": [
+        "cpp-false-sharing",
+        "cpp-vector-reserve"
+      ]
+    },
+    {
+      "id": "lesson-cpp-api-review",
+      "moduleId": "cpp-4",
+      "kind": "workshop",
+      "title": "Review a low-level API before optimizing it",
+      "summary": "Write ownership and failure contracts at an API boundary",
+      "objectives": [
+        "Write ownership and failure contracts at an API boundary.",
+        "Identify whether callers can violate an internal invariant."
+      ],
+      "body": "## Core idea\n\nA low-level component needs a precise contract for ownership transfer, thread topology, invalidation, errors, and shutdown. If a caller can destroy an endpoint while another thread uses it, a fast internal algorithm is irrelevant. Prefer interfaces that make invalid states difficult to express and document the remaining obligations. Keep lock-free progress claims separate from memory safety and application latency claims.\n\n## Worked example\n\nA try_push operation returning false must specify whether it consumed the input. A queue destructor must state whether producers have already stopped and what happens to queued values.\n\n## Try it\n\nWrite a one-page API contract for a bounded queue of move-only values. Include full, empty, throwing construction, endpoint destruction, and concurrent shutdown.\n\n## Check your work\n\nA reviewer can tell who owns a value after every outcome. Each progress claim has stated assumptions and destruction occurs only after active users are synchronized.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 25,
+      "questionIds": [
+        "cpp-allocator-boundary",
+        "cpp-shared-cycle"
+      ]
+    },
+    {
+      "id": "lesson-cpp-reclamation",
+      "title": "Removing a node is the easy part",
+      "summary": "Lock-free · ABA · Reclamation",
+      "body": "## The problem to understand\n\nA lock-free stack uses an atomic head pointer. A popper reads head and its next pointer, then performs compare_exchange. Another thread can remove and free the first node during that interval. Explain both the use-after-free and ABA hazards. Compare hazard pointers and epoch-based reclamation, including what happens when a participating thread stalls.\n\n## The mental model\n\nA successful pointer CAS only validates the head value at that instant; it does not prove that a node dereferenced earlier remained alive. A node can be freed before its next field is read. Allocator reuse can also restore the same address, making a pointer-only CAS miss intervening changes: ABA.\n\nHazard pointers publish protected nodes, then require readers to revalidate the source pointer before dereferencing. Removed nodes are retired and reclaimed only when no hazard protects them. A stalled thread can pin its protected nodes. Epoch schemes defer reclamation until all relevant readers have passed a quiescent state; a stalled participant can prevent reclamation of an unbounded stream of retired nodes. Tagged pointers mitigate some ABA cases but do not alone make dereferencing freed memory safe. Include shutdown, registration, memory bounds, and allocator behavior in the design.\n\n## Check your understanding\n\n- Show how dereference can race with reclamation before CAS.\n- Distinguish ABA from object-lifetime safety.\n- Describe hazard publication plus revalidation and epoch quiescence.\n- Compare stalled-reader retention and operational complexity.\n\n## Think one step further\n\nWhat progress guarantee does the full stack offer once its allocator and reclamation mechanism are included?\n\n## Primary reading\n\n- [C++ working draft](https://eel.is/c++draft/)",
+      "minutes": 11,
+      "questionIds": [
+        "cpp-reclamation",
+        "cpp-aba-stack",
+        "cpp-seqlock-language"
+      ],
+      "moduleId": "cpp-4",
+      "kind": "workshop",
+      "objectives": [
+        "Show how dereference can race with reclamation before CAS.",
+        "Distinguish ABA from object-lifetime safety."
+      ]
+    },
+    {
+      "id": "lesson-cpp-component-capstone",
+      "moduleId": "cpp-4",
+      "kind": "capstone",
+      "title": "Capstone: a bounded event processor in C++20",
+      "summary": "Integrate RAII, containers, synchronization, and measurement",
+      "objectives": [
+        "Integrate RAII, containers, synchronization, and measurement.",
+        "Validate a component across failure and shutdown."
+      ],
+      "body": "## Core idea\n\nBuild a bounded producer-consumer event processor with move-only events and explicit overload behavior. Start with a mutex-based implementation, then optimize only if a profile identifies a meaningful limit. Define the order of accepted events, who owns rejected values, how handlers fail, and how shutdown drains or discards pending work.\n\n## Worked example\n\nIf a handler throws, RAII must still release its lock and event resources. A shutdown request arriving during a full queue must not require a blocked producer to complete before the consumer is allowed to drain.\n\n## Try it\n\nDeliver implementation, ownership diagram, and tests for capacity one, full and empty transitions, handler failure, and repeated startup/shutdown. Run available sanitizers locally and compare throughput plus tail latency for two capacities.\n\n## Check your work\n\nAccept only with exact accounting for accepted, processed, rejected, and discarded events; safe destruction; and a documented thread contract. Explain any optimization against the safe baseline rather than assuming lock-free means faster.\n\n## Primary reading\n\n- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines)",
+      "minutes": 60,
+      "questionIds": [
+        "cpp-parallel-reduction"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Read basic C-style syntax, functions, and structs.",
+    "Understand pointers and compile a small program locally."
+  ],
+  "outcomes": [
+    "Distinguish ownership, storage, and object lifetime in C++20.",
+    "Use RAII, value semantics, and standard containers to design safe interfaces.",
+    "Reason about synchronization and concurrent reclamation.",
+    "Validate a bounded component with tests, sanitizers, and reproducible measurements."
+  ],
+  "modules": [
+    {
+      "id": "cpp-1",
+      "title": "Objects and ownership",
+      "description": "Establish lifetime, RAII, and value semantics.",
+      "level": "Foundation"
+    },
+    {
+      "id": "cpp-2",
+      "title": "Reusable interfaces",
+      "description": "Choose containers, polymorphism, and generic constraints.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "cpp-3",
+      "title": "Concurrency and locality",
+      "description": "Connect happens-before to cache behavior and diagnosis.",
+      "level": "Advanced"
+    },
+    {
+      "id": "cpp-4",
+      "title": "Engineering and validation",
+      "description": "Audit low-level boundaries and build a bounded component.",
+      "level": "Expert"
+    }
+  ]
+}

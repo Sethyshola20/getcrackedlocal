@@ -1,0 +1,98 @@
+[
+  {
+    "id": "rust",
+    "name": "Rust",
+    "short": "Rs",
+    "description": "Ownership, lifetimes, unsafe code, and fearless concurrency.",
+    "color": "#d4d4d4",
+    "category": "Languages"
+  },
+  {
+    "id": "go",
+    "name": "Go",
+    "short": "Go",
+    "description": "Goroutines, memory semantics, and runtime internals.",
+    "color": "#d4d4d4",
+    "category": "Languages"
+  },
+  {
+    "id": "cpp",
+    "name": "C++",
+    "short": "C++",
+    "description": "Object lifetimes, atomics, and zero-cost abstractions.",
+    "color": "#d4d4d4",
+    "category": "Languages"
+  },
+  {
+    "id": "hft",
+    "name": "High-frequency trading",
+    "short": "↗",
+    "description": "Market data, order books, and the long tail of latency.",
+    "color": "#d4d4d4",
+    "category": "Systems"
+  },
+  {
+    "id": "os",
+    "name": "Operating systems",
+    "short": ">_",
+    "description": "Virtual memory, scheduling, I/O, and kernel boundaries.",
+    "color": "#d4d4d4",
+    "category": "Systems"
+  },
+  {
+    "id": "networking",
+    "name": "Networking",
+    "short": "⌁",
+    "description": "Packets, protocols, congestion, and the wire beneath it all.",
+    "color": "#d4d4d4",
+    "category": "Systems"
+  },
+  {
+    "id": "architecture",
+    "name": "Computer architecture",
+    "short": "▦",
+    "description": "Caches, pipelines, memory ordering, and the silicon underneath.",
+    "color": "#d4d4d4",
+    "category": "Systems"
+  },
+  {
+    "id": "kubernetes",
+    "name": "Kubernetes",
+    "short": "⎈",
+    "description": "Reconciliation, scheduling, and production failure modes.",
+    "color": "#d4d4d4",
+    "category": "Infrastructure"
+  },
+  {
+    "id": "llms",
+    "name": "Large language models",
+    "short": "✳",
+    "description": "Attention, tokenization, evaluation, and model behavior.",
+    "color": "#d4d4d4",
+    "category": "AI & ML"
+  },
+  {
+    "id": "inference",
+    "name": "ML inference",
+    "short": "ϟ",
+    "description": "KV caches, batching, quantization, and serving tradeoffs.",
+    "color": "#d4d4d4",
+    "category": "AI & ML"
+  },
+  {
+    "id": "distributed",
+    "name": "Distributed systems",
+    "short": "⋈",
+    "description": "Consensus, consistency, replication, and partial failure.",
+    "color": "#d4d4d4",
+    "category": "Infrastructure"
+  },
+  {
+    "id": "databases",
+    "name": "Database internals",
+    "short": "▤",
+    "description": "Indexes, isolation, write-ahead logs, and durable state.",
+    "color": "#d4d4d4",
+    "category": "Infrastructure"
+  }
+]

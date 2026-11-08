@@ -1,0 +1,314 @@
+{
+  "id": "hft",
+  "topic": "hft",
+  "title": "Trading systems: deterministic low-latency engineering",
+  "description": "Learn market-data decoding, order-book state, execution lifecycles, risk controls, and reproducible latency analysis using synthetic data.",
+  "lessons": [
+    {
+      "id": "lesson-hft-market-data-contract",
+      "moduleId": "hft-1",
+      "kind": "concept",
+      "title": "A feed is a typed event contract",
+      "summary": "Decode bytes using documented units and message layouts",
+      "objectives": [
+        "Decode bytes using documented units and message layouts.",
+        "Separate transport framing from market-event semantics."
+      ],
+      "body": "## Core idea\n\nA market feed is a sequence of typed events, not a stream of interchangeable prices. Message layout, byte order, timestamp units, identifiers, and instrument metadata define the interpretation. Transport sequencing may be provided by a separate session or packet layer. Validate lengths before decoding and distinguish malformed input from a valid event type the application does not support.\n\n## Worked example\n\nA documented unsigned fixed-width price field represents an integer with a specified decimal scale. Reading the same bytes in host byte order or using an assumed scale can create a plausible but incorrect price.\n\n## Try it\n\nDesign a decoder for a synthetic add-order event with explicit byte order, length, price scale, and quantity units. Include truncated, unknown-type, and invalid-length inputs.\n\n## Check your work\n\nThe decoder never reads beyond the input and reports how many bytes it consumed. State which fields belong to your synthetic protocol and verify real-feed assumptions against the published specification.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-wire-endian",
+        "hft-parser-length"
+      ]
+    },
+    {
+      "id": "lesson-hft-order-book",
+      "moduleId": "hft-1",
+      "kind": "concept",
+      "title": "Build an order book from events",
+      "summary": "Distinguish order-level and price-level state",
+      "objectives": [
+        "Distinguish order-level and price-level state.",
+        "Preserve quantity invariants across book updates."
+      ],
+      "body": "## Core idea\n\nAn order-level book maps order identifiers to side, price, and remaining quantity. Price levels aggregate quantities from those live orders. Adds, executions, cancellations, deletions, and replacements have different transitions. Apply each event according to the venue contract and maintain an explicit policy for unknown identifiers rather than silently inventing state.\n\n## Worked example\n\nTwo buy orders at price 100 with quantities 5 and 7 produce a level quantity of 12. Executing 3 from the first order leaves order quantities 2 and 7 and aggregate quantity 9. Deleting the first order removes the remaining 2.\n\n## Try it\n\nReplay a short synthetic sequence through both an order map and aggregated levels. Assert nonnegative quantities and equality between level totals and summed live orders.\n\n## Check your work\n\nEach event changes exactly the intended state. A replacement explicitly handles its identifier and priority semantics; do not assume every venue preserves queue position.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-book-events",
+        "hft-spread-ticks",
+        "hft-partial-cancel",
+        "hft-fifo-model",
+        "hft-book-invariant"
+      ]
+    },
+    {
+      "id": "lesson-hft-timing-boundaries",
+      "moduleId": "hft-1",
+      "kind": "concept",
+      "title": "Define a latency measurement before reporting it",
+      "summary": "Name the start and end events of a latency metric",
+      "objectives": [
+        "Name the start and end events of a latency metric.",
+        "Distinguish serialization, queueing, and processing time."
+      ],
+      "body": "## Core idea\n\nLatency is meaningful only with explicit boundaries. Receive-to-decision, receive-to-send, and wire-to-wire metrics measure different work. Software timestamps include different delays than hardware timestamps. Monotonic clocks suit elapsed time within a host; comparisons across clocks require synchronization and an error budget. Processing stages may overlap, so adding stage durations is valid only under the stated model.\n\n## Worked example\n\nA packet may wait in a receive queue before the application timestamps it. A fast parse duration therefore does not establish low wire-to-decision latency. A cross-host subtraction can even be misleading when clock offset is larger than the event being measured.\n\n## Try it\n\nDraw a packet timeline from NIC arrival to outgoing serialization. Mark timestamp locations, clock domains, and intervals that overlap.\n\n## Check your work\n\nEvery reported number has units, boundaries, and clock uncertainty. Separate a simplified arithmetic budget from observed end-to-end latency on a real host.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-timestamp-unit",
+        "hft-clock-negative",
+        "hft-percentile-sum"
+      ]
+    },
+    {
+      "id": "lesson-hft-budget",
+      "title": "Where did the microseconds go?",
+      "summary": "Latency budget · Serialization",
+      "body": "## The problem to understand\n\nA simplified non-overlapping tick-to-trade path has 1.2 μs of receive/parse time, 0.8 μs of strategy time, and 0.6 μs of risk/encode time. A 250-byte wire image then serializes at 10 Gbit/s. Ignore propagation, framing beyond those 250 bytes, and all overlap. What is total latency in **microseconds**? Enter a number.\n\n## The mental model\n\nSerialization is `250 × 8 / 10^10` seconds = 0.2 μs. The assumed sequential path is therefore `1.2 + 0.8 + 0.6 + 0.2 = 2.8 μs`.\n\nThis is a budget under deliberately simplified assumptions, not a real exchange latency claim. Actual timing must define its boundaries: application timestamp, NIC timestamp, first or last wire bit, switch transit, and venue acknowledgment are different endpoints. Some stages can overlap, while queueing and scheduling add variable delay.\n\n## Check your understanding\n\n- Convert bytes to bits.\n- Convert serialization seconds into microseconds.\n- Sum all stages under the stated no-overlap assumption.\n\n## Think one step further\n\nIf parsing can start before the final packet byte arrives, which terms may overlap and how would you measure that?\n\n## Primary reading\n\n- [Linux kernel · scaling the networking stack](https://www.kernel.org/doc/html/latest/networking/scaling.html)",
+      "minutes": 4,
+      "questionIds": [
+        "hft-budget"
+      ],
+      "moduleId": "hft-1",
+      "kind": "workshop",
+      "objectives": [
+        "Convert bytes to bits.",
+        "Convert serialization seconds into microseconds."
+      ]
+    },
+    {
+      "id": "lesson-hft-recovery-state",
+      "moduleId": "hft-2",
+      "kind": "concept",
+      "title": "Recovery needs a consistent snapshot boundary",
+      "summary": "Define book validity through feed gaps and replay",
+      "objectives": [
+        "Define book validity through feed gaps and replay.",
+        "Choose a snapshot handoff without mixing histories."
+      ],
+      "body": "## Core idea\n\nA missing transport sequence creates uncertainty about subsequent state. Continuing to apply deltas does not prove the book is valid. A recovery protocol needs a snapshot associated with a known sequence boundary, buffered deltas after that boundary, and a rule for duplicates and unavailable history. Make validity a state that downstream consumers must check.\n\n## Worked example\n\nA snapshot represents sequence 100, while buffered events cover 98 through 105. Restore the snapshot, discard events already included, and apply 101 through 105 in order only if the sequence is contiguous under the chosen protocol.\n\n## Try it\n\nWrite states for live, gap detected, recovering, and valid again. Include a second gap during recovery and a snapshot too old for the available buffer.\n\n## Check your work\n\nNo decision consumes an implicitly valid book during uncertainty. Recovery either establishes a contiguous history from a known boundary or stays invalid with a bounded retry and buffer policy.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-snapshot-cut",
+        "hft-redundant-feeds"
+      ]
+    },
+    {
+      "id": "lesson-hft-order-lifecycle",
+      "moduleId": "hft-2",
+      "kind": "concept",
+      "title": "Order submission is an asynchronous state machine",
+      "summary": "Distinguish local intent from exchange acknowledgement",
+      "objectives": [
+        "Distinguish local intent from exchange acknowledgement.",
+        "Handle uncertain submission and cancellation outcomes."
+      ],
+      "body": "## Core idea\n\nSending bytes does not establish that an order was accepted. Orders transition through locally pending, acknowledged, partially filled, cancelled, rejected, and terminal states according to protocol events. A cancel request may race with an execution. Timeouts mean the outcome is uncertain, so identifiers and reconciliation rules are essential. Keep event ordering and terminal-state handling explicit.\n\n## Worked example\n\nA cancel is sent while an order has 10 remaining units. An execution of 4 may arrive before the cancel acknowledgement; the final cancelled quantity is then 6 under this synthetic lifecycle. Treating the cancel send as immediate completion would lose the fill.\n\n## Try it\n\nDraw a synthetic order state machine and replay acknowledgement, partial fill, cancel request, fill, and cancel acknowledgement. Include duplicate notifications.\n\n## Check your work\n\nExecuted plus cancelled plus remaining quantity agrees with the original order under the specified rules. Retries never create a new order merely because the original acknowledgement was delayed.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-replace-id",
+        "hft-cancel-fill-race"
+      ]
+    },
+    {
+      "id": "lesson-hft-sequence-gap",
+      "title": "A missing packet is a state transition",
+      "summary": "Market data · Sequencing · Recovery",
+      "body": "## The problem to understand\n\nA multicast feed carries monotonically increasing per-channel sequence numbers. You have applied events through 1041, then receive 1044. Packets may be duplicated, reordered, or lost. Design the book-builder response. A recovery service can provide retransmissions or a snapshot tagged with sequence S. Explain when the book can safely become tradable again.\n\n## The mental model\n\nA gap means the current book is no longer known to be complete. Mark the affected channel or instruments stale and stop decisions that require an accurate book. Buffer later packets within explicit memory and time bounds; do not apply them as if the missing updates never existed. Discard duplicates using the sequence domain, and handle bounded reordering without confusing it with permanent loss.\n\nReplay missing events in sequence, or install an atomic snapshot representing state through S and replay a contiguous suffix strictly after S. The handoff must avoid dropping updates that arrive during snapshot acquisition. Resume only after a validated contiguous sequence is restored and book invariants hold. If recovery cannot catch up within bounds, restart from a newer snapshot. Track gap rate, recovery duration, buffer pressure, and stale exposure.\n\n## Check your understanding\n\n- Treat an unexplained gap as loss of book validity.\n- Bound buffering and handle duplicate/reordered packets.\n- Define snapshot sequence plus contiguous replay handoff.\n- Specify a safe resume condition and failed-recovery behavior.\n\n## Think one step further\n\nHow does recovery change when two redundant feeds carry the same logical events with different packetization?\n\n## Primary reading\n\n- [Linux kernel · scaling the networking stack](https://www.kernel.org/doc/html/latest/networking/scaling.html)",
+      "minutes": 6,
+      "questionIds": [
+        "hft-sequence-gap"
+      ],
+      "moduleId": "hft-2",
+      "kind": "workshop",
+      "objectives": [
+        "Treat an unexplained gap as loss of book validity.",
+        "Bound buffering and handle duplicate/reordered packets."
+      ]
+    },
+    {
+      "id": "lesson-hft-tails",
+      "title": "An average cannot price your worst moments",
+      "summary": "Percentiles · Queueing",
+      "body": "## The problem to understand\n\nTwo implementations process the same realistic open-loop arrival trace. A averages 4 μs with p99.9 of 180 μs; B averages 6 μs with p99.9 of 20 μs. Explain why neither number alone picks a winner. Describe a measurement plan that exposes queueing, burst sensitivity, and any correlation between slow events and market conditions.\n\n## The mental model\n\nThe relevant objective depends on business deadlines, correctness, and which events are slow. A low mean can hide rare pauses exactly when traffic bursts or important market events arrive. A bounded tail may be more valuable, but a single percentile also hides the shape and severity beyond it.\n\nReplay representative bursts at controlled arrival times, timestamp scheduled arrival and completion, and report throughput, drops, queue age, and a latency histogram with sufficient tail samples. Separate service time from end-to-end response time. Correlate outliers with GC, page faults, scheduling, queue occupancy, and event categories. Include warmup and steady-state tests and document hardware, clock source, and load. Compare behavior near saturation instead of reporting only a lightly loaded median.\n\n## Check your understanding\n\n- Tie latency objectives to deadlines and event importance.\n- Measure open-loop response time and queueing, including rejected work.\n- Collect enough tail samples and correlate outliers with causes.\n\n## Think one step further\n\nHow would you report uncertainty in p99.99 when only 10,000 requests were observed?\n\n## Primary reading\n\n- [Linux kernel · scaling the networking stack](https://www.kernel.org/doc/html/latest/networking/scaling.html)",
+      "minutes": 4,
+      "questionIds": [
+        "hft-tails"
+      ],
+      "moduleId": "hft-2",
+      "kind": "workshop",
+      "objectives": [
+        "Tie latency objectives to deadlines and event importance.",
+        "Measure open-loop response time and queueing, including rejected work."
+      ]
+    },
+    {
+      "id": "lesson-hft-pretrade-controls",
+      "moduleId": "hft-3",
+      "kind": "concept",
+      "title": "Bound risk checks and fail predictably",
+      "summary": "Place deterministic controls before external submission",
+      "objectives": [
+        "Place deterministic controls before external submission.",
+        "Account for outstanding reservations and release them correctly."
+      ],
+      "body": "## Core idea\n\nEngineering controls can bound order size, outstanding count, message rate, and stale-data use in a simulator. Validate against authoritative instrument units and reserve capacity atomically before submission. Release reservations according to acknowledged terminal transitions, not an optimistic timeout. A kill mechanism also needs explicit semantics for already-sent and still-live orders.\n\n## Worked example\n\nA simulated outstanding-quantity limit of 100 with 80 already reserved permits at most 20 more. Two concurrent submissions of 15 cannot both pass independent stale reads of 80. A single owner or synchronized reservation operation preserves the invariant.\n\n## Try it\n\nSpecify checks for a synthetic order gateway and write tests for a simultaneous limit breach, stale book, duplicate request, and unknown submission outcome.\n\n## Check your work\n\nEvery rejection has a reason, every accepted order has a reservation, and reconciliation repairs uncertain state. Explain the control scope using simulator assumptions rather than claiming these checks certify a production trading system.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-exposure-check",
+        "hft-risk-restart",
+        "hft-kill-switch"
+      ]
+    },
+    {
+      "id": "lesson-hft-queueing-bursts",
+      "moduleId": "hft-3",
+      "kind": "concept",
+      "title": "Burst load, backpressure, and stale work",
+      "summary": "Estimate backlog growth during a burst",
+      "objectives": [
+        "Estimate backlog growth during a burst.",
+        "Choose an explicit overload policy by message semantics."
+      ],
+      "body": "## Core idea\n\nA fast average service rate does not eliminate bursts. If arrival rate exceeds service rate, backlog grows until capacity or admission rules intervene. Dropping a market-data delta can invalidate dependent state, whereas coalescing replaceable telemetry may be acceptable. Queue capacity is also an age budget: by the time an event is processed, its information may be stale.\n\n## Worked example\n\nFor a synthetic 2 ms burst at 800,000 events/s with service fixed at 500,000 events/s, backlog grows by 600 events if starting empty and ignoring other effects. A 200-slot queue cannot absorb that burst without another policy.\n\n## Try it\n\nCompare block, reject, drop, and coalesce policies for feed deltas, order commands, and metrics. Calculate backlog and oldest-event age for one synthetic burst.\n\n## Check your work\n\nPolicies respect message dependencies and expose invalidation rather than concealing it. State all rate and timing assumptions, and measure the effect of overload on the full system.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-queue-wait",
+        "hft-ring-overflow"
+      ]
+    },
+    {
+      "id": "lesson-hft-price",
+      "title": "A price is an integer plus a contract",
+      "summary": "Fixed point · Order books",
+      "body": "## The problem to understand\n\nAn instrument has a tick size of 0.005 currency units. Its feed transmits a signed integer count of ticks. Which internal representation best preserves exact price equality and ordering for book keys, while still requiring explicit overflow checks at conversion boundaries?\n\n## The mental model\n\nKeep prices as an integer number of ticks or another explicitly specified fixed-point unit. This preserves exact equality and ordering within the supported range. Define the scale with the instrument metadata and validate conversions, arithmetic overflow, and protocol bounds. A decimal display is a presentation operation.\n\nBinary floating point cannot exactly represent many decimal fractions. Equality and rounding behavior can then disagree with venue tick rules. Blindly multiplying a received floating-point value by 200 does not recover information already rounded away. Different instruments can have different tick schedules, so the representation contract must travel with the instrument or normalized schema.\n\n## Check your understanding\n\n- Use exact integer units matching the protocol contract.\n- Preserve scale metadata and validate conversions.\n- Account for overflow and instrument-specific tick rules.\n\n## Think one step further\n\nHow would you represent a venue with price-dependent tick sizes and negative prices?\n\n## Primary reading\n\n- [Linux kernel · scaling the networking stack](https://www.kernel.org/doc/html/latest/networking/scaling.html)",
+      "minutes": 4,
+      "questionIds": [
+        "hft-price"
+      ],
+      "moduleId": "hft-3",
+      "kind": "workshop",
+      "objectives": [
+        "Use exact integer units matching the protocol contract.",
+        "Preserve scale metadata and validate conversions."
+      ]
+    },
+    {
+      "id": "lesson-hft-benchmark",
+      "title": "The load generator that hid the pause",
+      "summary": "Benchmarking · Coordinated omission",
+      "body": "## The problem to understand\n\nA benchmark sends the next request only after the previous response. During a 100 ms server pause, it records one slow request and then returns to normal. Production traffic continues arriving during pauses. Explain the measurement error and design a test that reveals it without accidentally benchmarking an overloaded load generator.\n\n## The mental model\n\nThe closed-loop generator suppresses arrivals while waiting for the paused response. It therefore omits the requests that would have arrived and queued during the pause. This is coordinated omission: the measured request population depends on server completion time.\n\nUse an independently scheduled arrival process representative of production. Measure latency from intended arrival time as well as actual submission, and retain load-generator scheduling lag. Record rejected and timed-out requests instead of dropping them from the histogram. Ensure the generator has sufficient CPU, networking, and outstanding-request capacity, or use multiple generators with a documented time base. Compare offered load, achieved throughput, queue depth, and latency across saturation. Corrected histograms can be informative, but a realistic arrival model and transparent boundaries remain necessary.\n\n## Check your understanding\n\n- Identify missing arrivals during the server pause.\n- Schedule requests independently and include queue delay and failed requests.\n- Measure load-generator lag and verify generator capacity.\n\n## Think one step further\n\nWhen is a closed-loop benchmark the correct workload model rather than a measurement flaw?\n\n## Primary reading\n\n- [Linux kernel · scaling the networking stack](https://www.kernel.org/doc/html/latest/networking/scaling.html)",
+      "minutes": 6,
+      "questionIds": [
+        "hft-benchmark"
+      ],
+      "moduleId": "hft-3",
+      "kind": "workshop",
+      "objectives": [
+        "Identify missing arrivals during the server pause.",
+        "Schedule requests independently and include queue delay and failed requests."
+      ]
+    },
+    {
+      "id": "lesson-hft-replay-determinism",
+      "moduleId": "hft-4",
+      "kind": "concept",
+      "title": "Replayable state beats an irreproducible incident",
+      "summary": "Separate event-time logic from wall-clock side effects",
+      "objectives": [
+        "Separate event-time logic from wall-clock side effects.",
+        "Design reproducible logs with explicit versions."
+      ],
+      "body": "## Core idea\n\nA replayable system records enough inputs and ordering information to reconstruct its state transitions. Inject time and nondeterministic decisions instead of reading wall time deep inside business logic. Include schema versions, instrument metadata, and configuration. A log of outputs alone cannot explain why those outputs occurred, while an unbounded synchronous logger can itself disrupt the hot path.\n\n## Worked example\n\nTwo runs of the same feed and configuration should produce identical book checksums and simulated decisions. If a timer depends on current wall time, replay diverges unless timer events or a deterministic time source are supplied.\n\n## Try it\n\nDefine a replay record containing input bytes, ordering information, configuration identity, and timer events. Re-run after an intentional dropped event and identify the first divergent state.\n\n## Check your work\n\nThe comparison locates a reproducible transition rather than merely noticing different final output. Log loss, queue limits, and sensitive fields have explicit handling.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 15,
+      "questionIds": [
+        "hft-replay-determinism"
+      ]
+    },
+    {
+      "id": "lesson-hft-latency-experiment",
+      "moduleId": "hft-4",
+      "kind": "workshop",
+      "title": "Design a latency experiment that can be repeated",
+      "summary": "Control offered load and report the full measurement context",
+      "objectives": [
+        "Control offered load and report the full measurement context.",
+        "Interpret tail changes without adding percentile values."
+      ],
+      "body": "## Core idea\n\nRecord hardware, affinity, workload distribution, warmup, timestamp boundaries, and offered load. Preserve raw or histogram data with sufficient tail resolution. Open-loop arrivals help expose pauses that a sequential request generator can hide. Percentiles from individual stages cannot generally be added to obtain an end-to-end percentile because the slow samples need not coincide.\n\n## Worked example\n\nA generator that waits for each response slows its own arrivals during a server pause. The resulting sample set can underrepresent requests that would have queued under a fixed external arrival schedule.\n\n## Try it\n\nPlan a synthetic replay at three arrival rates with one injected pause. Compare a sequential generator with scheduled arrivals and report p50, p99, rejection count, and sample count.\n\n## Check your work\n\nResults include the load model and timestamp uncertainty. Tail improvement must not come solely from silently dropping slow work or changing what is measured.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 25,
+      "questionIds": [
+        "hft-nic-affinity",
+        "hft-allocation-jitter"
+      ]
+    },
+    {
+      "id": "lesson-hft-hot-path",
+      "title": "Design the path that cannot wait",
+      "summary": "Risk checks · NUMA · Backpressure",
+      "body": "## The problem to understand\n\nDesign a single-host market-data-to-order pipeline with a 10 μs application deadline at p99.9 under a specified burst envelope. Include sequencing, strategy, pre-trade risk, and outbound order handling. Discuss thread boundaries, memory ownership, allocation, NUMA placement, queue overflow, stale market data, and independent kill-switch behavior. Do not assume that lock-free automatically means faster.\n\n## The mental model\n\nStart with explicit timing boundaries and a bounded offered-load envelope; no finite system meets a fixed latency deadline under arbitrary overload. Prefer a short, ownership-oriented path: receive and sequence data, update a valid book, compute a decision, run mandatory risk checks, and encode/send. Keep related mutable state on one core where feasible; each extra queue introduces ownership transfer and waiting.\n\nPreallocate bounded buffers, warm critical pages, choose CPU/NIC queue affinity deliberately, and align memory placement with the executing NUMA node. Define loss, rejection, and recovery policies for every full queue; never silently trade on incomplete data. Risk checks must fail closed and cannot be bypassed by the optimized path. Provide a separately controlled kill switch and audit state transitions. Validate open-loop burst tests, hardware timestamps where available, and event-level tail traces. Tune only after measuring the complete path.\n\n## Check your understanding\n\n- Define deadline boundaries and bounded load assumptions.\n- Explain ownership, thread transitions, memory locality, and allocation policy.\n- Specify overflow, stale-data, and recovery behaviors.\n- Keep risk enforcement and independent kill-switch control in the design.\n\n## Think one step further\n\nHow would a hot standby take over without duplicating orders or trusting a stale risk position?\n\n## Primary reading\n\n- [Linux kernel · scaling the networking stack](https://www.kernel.org/doc/html/latest/networking/scaling.html)",
+      "minutes": 11,
+      "questionIds": [
+        "hft-hot-path"
+      ],
+      "moduleId": "hft-4",
+      "kind": "workshop",
+      "objectives": [
+        "Define deadline boundaries and bounded load assumptions.",
+        "Explain ownership, thread transitions, memory locality, and allocation policy."
+      ]
+    },
+    {
+      "id": "lesson-hft-exchange-capstone",
+      "moduleId": "hft-4",
+      "kind": "capstone",
+      "title": "Capstone: a deterministic exchange-feed simulator",
+      "summary": "Integrate decoding, recovery, order state, controls, and timing",
+      "objectives": [
+        "Integrate decoding, recovery, order state, controls, and timing.",
+        "Demonstrate invariants during gaps and overload."
+      ],
+      "body": "## Core idea\n\nBuild a local simulator with a synthetic feed, an order book, a rule-based decision stub, and a mock order gateway. Keep strategy behavior deliberately simple so the engineering can be inspected. Record inputs for replay and expose validity, backlog, outstanding orders, and latency. Define recovery and shutdown behavior before adding performance optimizations.\n\n## Worked example\n\nInject a missing feed event during a burst and a delayed order acknowledgement. The system should invalidate dependent decisions, recover a contiguous book, and reconcile the order without inventing a second submission.\n\n## Try it\n\nDeliver protocol notes, implementation or detailed executable model, replay fixtures, and tests for duplicates, gaps, partial fills, limit breaches, and shutdown. Compare two queue capacities with identical synthetic load.\n\n## Check your work\n\nReview deterministic replay checksums, quantity accounting, bounded resources, and explicit uncertain states. Include measured boundaries and limitations. This exercise evaluates systems engineering using synthetic data.\n\n## Primary reading\n\n- [Nasdaq TotalView-ITCH specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHspecification.pdf)",
+      "minutes": 60,
+      "questionIds": [
+        "hft-failover-orders",
+        "hft-audit-boundary"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Read binary formats and basic data structures.",
+    "Understand threads, networking, and elementary probability."
+  ],
+  "outcomes": [
+    "Decode market events using explicit protocol and instrument contracts.",
+    "Maintain deterministic book state through gaps, duplicates, and recovery.",
+    "Measure latency distributions without hiding offered load or clock error.",
+    "Design a replayable execution pipeline with bounded queues and auditable controls."
+  ],
+  "modules": [
+    {
+      "id": "hft-1",
+      "title": "Market events and state",
+      "description": "Establish protocol, book, and timing fundamentals.",
+      "level": "Foundation"
+    },
+    {
+      "id": "hft-2",
+      "title": "Recovery and execution",
+      "description": "Maintain continuity and model orders across uncertain outcomes.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "hft-3",
+      "title": "Measurement and controls",
+      "description": "Connect tail behavior to reproducible tests and pre-trade checks.",
+      "level": "Advanced"
+    },
+    {
+      "id": "hft-4",
+      "title": "Deterministic system design",
+      "description": "Integrate replay, observability, and controlled failure into a simulator.",
+      "level": "Expert"
+    }
+  ]
+}

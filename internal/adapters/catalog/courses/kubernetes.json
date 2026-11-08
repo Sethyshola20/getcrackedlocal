@@ -1,0 +1,314 @@
+{
+  "id": "kubernetes",
+  "topic": "kubernetes",
+  "title": "Kubernetes: reconciliation to production failure modes",
+  "description": "Build an operational model of Kubernetes workloads, scheduling, networking, storage, and controller behavior using declarative state and controlled failures.",
+  "lessons": [
+    {
+      "id": "lesson-kubernetes-desired-state",
+      "moduleId": "kubernetes-1",
+      "kind": "concept",
+      "title": "Desired state and the reconciliation loop",
+      "summary": "Explain the separation between an API write and observed convergence",
+      "objectives": [
+        "Explain the separation between an API write and observed convergence.",
+        "Use ownership and selectors consistently."
+      ],
+      "body": "## Core idea\n\nKubernetes stores desired state through its API, while controllers repeatedly compare it with observed state and act toward convergence. An accepted manifest does not mean the workload is already running. Metadata, selectors, ownership, status, and events connect objects and explain progress. Controllers must tolerate retries and partial work because failures can occur between actions.\n\n## Worked example\n\nA Deployment requests three replicas. Its controller manages ReplicaSets, which manage Pods. Deleting a managed Pod usually creates a replacement because the desired replica count still exists.\n\n## Try it\n\nDraw the Deployment-to-ReplicaSet-to-Pod ownership chain. Apply a small workload in a disposable cluster and compare spec, status, and events during startup.\n\n## Check your work\n\nExplain which controller acts at each layer. The desired count, ready count, and current object count are treated as different observations rather than synonyms for health.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 15,
+      "questionIds": [
+        "kubernetes-deployment-replicas"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-pods-containers",
+      "moduleId": "kubernetes-1",
+      "kind": "concept",
+      "title": "A Pod is a scheduling and lifecycle unit",
+      "summary": "Distinguish container restart from Pod replacement",
+      "objectives": [
+        "Distinguish container restart from Pod replacement.",
+        "Identify resources shared within a Pod."
+      ],
+      "body": "## Core idea\n\nContainers in a Pod share a network context and can share volumes, while retaining their own process and resource details. The Pod is placed as a unit on a node. Restarting a container within a Pod differs from replacing the Pod with a new identity. Applications should not depend on a Pod IP or local ephemeral data surviving replacement.\n\n## Worked example\n\nA sidecar can communicate with the main application over localhost in the shared Pod network. Moving the sidecar into another Pod changes discovery, identity, and failure behavior even if the image is unchanged.\n\n## Try it\n\nClassify failures that restart a container, replace a Pod, or require rescheduling. Mark which data survives when stored in memory, the container writable layer, an emptyDir, or a persistent volume.\n\n## Check your work\n\nThe answer distinguishes the configured volume lifetime from process lifetime. It does not use Pod identity, stable DNS, and durable storage interchangeably.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 15,
+      "questionIds": [
+        "kubernetes-pod-unit",
+        "kubernetes-job-retry",
+        "kubernetes-config-refresh"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-services-discovery",
+      "moduleId": "kubernetes-1",
+      "kind": "concept",
+      "title": "Services select endpoints; applications still need retries",
+      "summary": "Connect labels, Services, and ready endpoints",
+      "objectives": [
+        "Connect labels, Services, and ready endpoints.",
+        "Diagnose a missing route from client to Pod."
+      ],
+      "body": "## Core idea\n\nA Service gives a stable access abstraction over selected endpoints. Labels and selectors connect workloads; readiness influences ordinary endpoint use. DNS resolves names, while the cluster networking implementation carries traffic. Successful name resolution does not prove a ready backend exists. Applications still need connection and request failure handling as endpoints change.\n\n## Worked example\n\nA Service selector using app=worker does not match Pods labeled app=workers. DNS may still return the Service address, yet no selected backend can serve the request.\n\n## Try it\n\nCreate a request-path checklist: service name, Service port and targetPort, selector, endpoints, readiness, Pod listener, and policy. Use a deliberate selector typo in a test cluster.\n\n## Check your work\n\nThe diagnosis proceeds through observed objects and connectivity tests. It separates name resolution, endpoint selection, and an application actually listening on the expected port.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 15,
+      "questionIds": [
+        "kubernetes-service-selector",
+        "kubernetes-dns-search"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-probes",
+      "title": "Healthy enough to live, not ready to serve",
+      "summary": "Probes · Availability",
+      "body": "## The problem to understand\n\nAn application is alive and recovering a local cache. It must temporarily receive no normal Service traffic, but restarting it would reset recovery. Which probe should report failure during that period, assuming the Pod is otherwise running?\n\n## The mental model\n\nReadiness should fail while the application is unable to serve. Kubernetes uses Pod readiness when deciding whether it should receive normal Service traffic through ready endpoints. A liveness failure can trigger a container restart after its configured threshold, which may repeatedly erase recovery progress.\n\nA startup probe can give a slow-starting application time before liveness and readiness checks begin, but it is not a replacement for ongoing readiness. Readiness changes are not instantaneous global traffic barriers: endpoints and upstream components need time to observe them, and existing connections may remain.\n\n## Check your understanding\n\n- Use readiness to express temporary inability to serve.\n- Distinguish liveness restart semantics from traffic eligibility.\n- Recognize startup behavior and propagation delays.\n\n## Think one step further\n\nShould a brief database outage make every application container fail liveness?\n\n## Primary reading\n\n- [Kubernetes · Pod lifecycle and probes](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)",
+      "minutes": 4,
+      "questionIds": [
+        "kubernetes-probes"
+      ],
+      "moduleId": "kubernetes-1",
+      "kind": "workshop",
+      "objectives": [
+        "Use readiness to express temporary inability to serve.",
+        "Distinguish liveness restart semantics from traffic eligibility."
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-scheduling-placement",
+      "moduleId": "kubernetes-2",
+      "kind": "concept",
+      "title": "Requests, placement, and topology constraints",
+      "summary": "Distinguish scheduling requests from runtime limits",
+      "objectives": [
+        "Distinguish scheduling requests from runtime limits.",
+        "Reason about multiple placement constraints together."
+      ],
+      "body": "## Core idea\n\nThe scheduler places Pods based on resource requests and eligibility constraints, not a promise that observed free memory alone will fit every workload. Node selectors, taints and tolerations, affinity, topology spread, and volume constraints all matter. Tolerating a taint permits consideration; it does not attract a Pod or override every other constraint. Requests and limits serve different roles.\n\n## Worked example\n\nA Pod requesting two CPUs cannot fit on a node with only one CPU of unallocated requested capacity even if current usage is low. A matching resource budget still does not help if its node affinity excludes that node.\n\n## Try it\n\nAnalyze a synthetic three-node cluster with resource requests, one taint, and a zone restriction. Identify eligible nodes and state the first unsatisfied constraint for each rejected node.\n\n## Check your work\n\nThe answer accounts for all filters rather than choosing the node with the lowest utilization. Verify the reason against scheduler events when reproducing locally.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 15,
+      "questionIds": [
+        "kubernetes-requests-packing"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-rollouts-disruption",
+      "moduleId": "kubernetes-2",
+      "kind": "concept",
+      "title": "Rollouts and disruption budgets have specific scopes",
+      "summary": "Plan surge and unavailability under constrained capacity",
+      "objectives": [
+        "Plan surge and unavailability under constrained capacity.",
+        "Distinguish voluntary disruption from other failures."
+      ],
+      "body": "## Core idea\n\nA rollout replaces replicas under configured availability and surge rules. New Pods must become ready before they can contribute to service capacity. A PodDisruptionBudget constrains supported voluntary eviction operations; it does not guarantee survival of arbitrary node failures or replace a workload controller’s rollout settings. Capacity and shutdown behavior determine whether a theoretically safe rollout converges.\n\n## Worked example\n\nA rollout needing a surge Pod can stall if no node has room for its request. Lowering unavailability may preserve existing capacity but does not manufacture space for the new Pod.\n\n## Try it\n\nPlan a rollout of three replicas with a slow startup and one node being drained. Specify readiness, surge, unavailability, disruption budget, and termination behavior.\n\n## Check your work\n\nThe plan includes spare capacity and a rollback signal. It explains the scope of each mechanism and avoids treating a disruption budget as a universal availability guarantee.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 15,
+      "questionIds": [
+        "kubernetes-rollout-surge",
+        "kubernetes-pdb-boundary",
+        "kubernetes-image-reproducibility"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-resources",
+      "title": "The node had free memory. The container died.",
+      "summary": "Requests · Limits · OOM",
+      "body": "## The problem to understand\n\nA container requests 256 MiB and has a 512 MiB memory limit. Its working set briefly reaches 650 MiB. The node still has several GiB free, yet the container is OOMKilled. Explain scheduling requests versus enforcement limits, distinguish this from node-pressure eviction, and propose a repair based on measurement rather than simply removing limits.\n\n## The mental model\n\nThe scheduler primarily uses resource requests to place Pods. A container memory limit is an enforcement boundary, commonly through cgroups, so exceeding it can cause a cgroup OOM kill even when the node has free memory. The request is not a maximum and the limit is not a promise that the node will always have spare capacity.\n\nNode-pressure eviction is a different mechanism driven by node resource pressure and eviction policy. Inspect termination reason, events, usage over time, memory categories, and application allocation patterns. Account for caches, concurrency, native memory, and runtime headroom. Set requests and limits from observed steady and burst behavior, bound application memory where possible, and load-test the result. Removing limits can transfer the failure to the node or neighboring workloads.\n\n## Check your understanding\n\n- Separate scheduler requests from memory-limit enforcement.\n- Distinguish cgroup OOM from node-pressure eviction.\n- Measure burst memory and tune application/concurrency plus resource settings.\n\n## Think one step further\n\nWhy can a CPU limit cause latency spikes without terminating the container?\n\n## Primary reading\n\n- [Kubernetes · resource management for Pods](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/)",
+      "minutes": 5,
+      "questionIds": [
+        "kubernetes-resources"
+      ],
+      "moduleId": "kubernetes-2",
+      "kind": "workshop",
+      "objectives": [
+        "Separate scheduler requests from memory-limit enforcement.",
+        "Distinguish cgroup OOM from node-pressure eviction."
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-shutdown",
+      "title": "SIGTERM is not the whole rollout",
+      "summary": "Rollouts · Connection draining",
+      "body": "## The problem to understand\n\nDesign graceful shutdown for an HTTP Pod during a rolling update. Requests can last 20 seconds and clients reuse keep-alive connections. Discuss readiness, endpoint propagation, preStop, SIGTERM handling, listener shutdown, in-flight requests, and terminationGracePeriodSeconds. Explain what happens when the budget expires.\n\n## The mental model\n\nTreat draining as a coordinated timeline. Stop advertising readiness and allow for endpoint/upstream propagation, while the application remains able to handle already routed traffic. A preStop hook may provide part of that coordination, but it consumes the same termination grace budget. Kubernetes sends the termination signal after the hook; the application must handle it deliberately.\n\nStop accepting new work in a protocol-aware way, close or drain reusable connections, and allow accepted requests to finish within a bounded shutdown deadline. Set the grace period to cover hook time, propagation allowance, and maximum intended drain time with margin. On expiry the container can be forcibly killed, so requests may still fail; clients need appropriate retry/idempotency semantics. Test with real ingress behavior and long requests rather than assuming readiness immediately closes every connection.\n\n## Check your understanding\n\n- Design an explicit readiness and propagation/draining timeline.\n- Include preStop time within the overall grace budget.\n- Handle reusable connections, listener shutdown, and bounded in-flight completion.\n- Explain forced termination and client-visible failure semantics.\n\n## Think one step further\n\nHow does the shutdown strategy change for a consumer that has leased jobs from a queue?\n\n## Primary reading\n\n- [Kubernetes · termination of Pods](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination)",
+      "minutes": 6,
+      "questionIds": [
+        "kubernetes-shutdown"
+      ],
+      "moduleId": "kubernetes-2",
+      "kind": "workshop",
+      "objectives": [
+        "Design an explicit readiness and propagation/draining timeline.",
+        "Include preStop time within the overall grace budget."
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-persistent-state",
+      "moduleId": "kubernetes-3",
+      "kind": "concept",
+      "title": "Persistent volumes are not replication",
+      "summary": "Distinguish stable identity, durable storage, and replicated state",
+      "objectives": [
+        "Distinguish stable identity, durable storage, and replicated state.",
+        "Handle storage attachment and recovery assumptions."
+      ],
+      "body": "## Core idea\n\nStatefulSet supports ordered identities and volume association for stateful workloads, but it does not implement database replication or consensus. A persistent volume’s durability and availability depend on its storage backend and access semantics. Scheduling, zone placement, attachment, and application recovery must align. Backups require a restore procedure, not just a volume that survives a Pod.\n\n## Worked example\n\nA single database Pod with a persistent volume may recover after a container restart yet remain unavailable when its storage zone fails. Creating another Pod does not automatically make the same data safely writable from another zone.\n\n## Try it\n\nDesign a storage plan for a test database: volume class, access mode, topology, backup method, restore target, and expected recovery behavior after Pod and node loss.\n\n## Check your work\n\nThe plan separates application consistency from storage persistence. It includes a tested restore and never claims a StatefulSet alone supplies quorum or multi-writer safety.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 15,
+      "questionIds": [
+        "kubernetes-stateful-identity",
+        "kubernetes-pv-lifecycle",
+        "kubernetes-cluster-recovery"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-cluster-troubleshooting",
+      "moduleId": "kubernetes-3",
+      "kind": "workshop",
+      "title": "Read cluster symptoms as a dependency chain",
+      "summary": "Separate scheduling, startup, readiness, and request failures",
+      "objectives": [
+        "Separate scheduling, startup, readiness, and request failures.",
+        "Use events and status before changing configuration."
+      ],
+      "body": "## Core idea\n\nA workload can fail before scheduling, during image pull or startup, after starting but before readiness, or while serving traffic. Each phase has different evidence. Start with the observed object state, then follow the dependency that blocks progress. Broad restarts can erase useful evidence and temporarily hide a recurring fault.\n\n## Worked example\n\nPending with a scheduling event differs from a scheduled Pod waiting on image pull. A Running Pod can still have zero ready containers. A ready Pod can fail application requests because a dependency is unavailable.\n\n## Try it\n\nBuild a diagnosis tree for an unavailable service using Pod conditions, events, container state, endpoints, logs, and resource pressure. Reproduce two distinct failures locally.\n\n## Check your work\n\nEach branch names an observation and a targeted next check. A repair addresses the identified dependency and is followed by a concrete readiness and request test.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 25,
+      "questionIds": [
+        "kubernetes-finalizer-stuck"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-quorum",
+      "title": "How many failures can etcd tolerate?",
+      "summary": "etcd · Quorum · Control plane",
+      "body": "## The problem to understand\n\nAn etcd cluster uses a five-member voting Raft group. With no membership changes, what is the maximum number of voting members that can be unavailable while the remaining connected members can still form a majority and commit writes? Enter a whole number. Assume the surviving members can communicate.\n\n## The mental model\n\nA majority of five is three, so two members can be unavailable. The three surviving connected voters can still form a quorum. If only two remain, they cannot safely commit writes just because no other member responds.\n\nFailure tolerance is about connected voting majorities, not only powered-on machine counts. A network partition can prevent a quorum even when every process is alive. This also describes etcd write availability, not automatic termination of already running application Pods: Kubernetes data-plane workloads can often continue while control-plane changes are unavailable.\n\n## Check your understanding\n\n- Compute a majority of five as three.\n- Require connected voting members rather than merely live processes.\n- Separate control-plane writes from already running workload behavior.\n\n## Think one step further\n\nWhy does moving from five voters to six not increase the number of failures the cluster can tolerate?\n\n## Primary reading\n\n- [etcd · failure modes](https://etcd.io/docs/v3.5/op-guide/failures/)",
+      "minutes": 4,
+      "questionIds": [
+        "kubernetes-quorum"
+      ],
+      "moduleId": "kubernetes-3",
+      "kind": "workshop",
+      "objectives": [
+        "Compute a majority of five as three.",
+        "Require connected voting members rather than merely live processes."
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-pending",
+      "title": "Capacity exists, but the Pod stays Pending",
+      "summary": "Scheduling · Affinity · Volumes",
+      "body": "## The problem to understand\n\nA cluster dashboard shows 40% aggregate CPU utilization, yet a Pod requesting 8 CPUs stays Pending. List concrete reasons aggregate utilization is insufficient evidence of schedulability. Propose an ordered investigation covering per-node requests, affinity, taints, and persistent volumes. Explain why changing limits alone may have no effect.\n\n## The mental model\n\nThe scheduler needs one eligible node with enough allocatable unreserved resources for the Pod, subject to placement constraints. Aggregate utilization says neither how capacity is fragmented nor how much is already reserved by other requests. Eight idle CPUs spread across several nodes do not necessarily fit one Pod. Limits generally do not replace scheduling requests.\n\nStart with the Pod’s scheduling events. Compare its complete requests, including relevant init-container/overhead rules, with per-node allocatable and reserved resources. Check node selectors and required affinity, topology spread, taints/tolerations, and node readiness. For stateful workloads, inspect PVC binding and volume topology/zone constraints. Repair the actual constraint, then evaluate whether autoscaling can create a compatible node. Do not remove placement or storage guarantees merely to make the status turn green.\n\n## Check your understanding\n\n- Distinguish utilization from requests, allocatable capacity, and fragmentation.\n- Use scheduling events and per-node fit before changing resource settings.\n- Investigate affinity, taints, node state, and volume topology.\n- Explain why changing only limits may not affect placement.\n\n## Think one step further\n\nHow can a PodDisruptionBudget affect a node drain even though it does not make a Pending Pod schedulable?\n\n## Primary reading\n\n- [Kubernetes · concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 6,
+      "questionIds": [
+        "kubernetes-pending"
+      ],
+      "moduleId": "kubernetes-3",
+      "kind": "workshop",
+      "objectives": [
+        "Distinguish utilization from requests, allocatable capacity, and fragmentation.",
+        "Use scheduling events and per-node fit before changing resource settings."
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-workload-identity",
+      "moduleId": "kubernetes-4",
+      "kind": "concept",
+      "title": "Workload identity, RBAC, and network boundaries",
+      "summary": "Scope API permissions to a workload’s actual operations",
+      "objectives": [
+        "Scope API permissions to a workload’s actual operations.",
+        "Distinguish API authorization from network connectivity."
+      ],
+      "body": "## Core idea\n\nA ServiceAccount identifies a workload to the Kubernetes API. RBAC grants allowed API actions within a scope. NetworkPolicy can restrict supported network traffic when enforced by the network implementation; it does not replace API authorization or application authentication. Secrets need careful distribution and access boundaries, and encoding is not encryption. State the trust boundary for each control.\n\n## Worked example\n\nA controller that only reads ConfigMaps in one namespace does not need cluster-wide write access to Secrets. A Pod allowed to call an HTTP service by network policy still needs whatever application credentials that service requires.\n\n## Try it\n\nDraft a permission table for a read-only status collector. Specify API verbs and resources, namespace scope, network destinations, and secret needs.\n\n## Check your work\n\nEvery permission maps to a documented operation. Verify denied operations in a disposable environment and avoid broad permissions added only to silence an unexplained error.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 15,
+      "questionIds": [
+        "kubernetes-config-secret",
+        "kubernetes-namespace-scope",
+        "kubernetes-network-policy",
+        "kubernetes-rbac-scope"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-observability-slos",
+      "moduleId": "kubernetes-4",
+      "kind": "workshop",
+      "title": "Observe reconciliation and user-visible availability",
+      "summary": "Connect workload metrics to a user-facing service objective",
+      "objectives": [
+        "Connect workload metrics to a user-facing service objective.",
+        "Distinguish desired, available, and healthy behavior."
+      ],
+      "body": "## Core idea\n\nCluster health metrics and application service objectives answer different questions. A desired replica count can be satisfied while users receive errors or slow responses. Track request success and latency alongside saturation, restart rate, readiness transitions, and reconciliation delay. Use logs and traces to connect a failed request to dependencies and rollout events.\n\n## Worked example\n\nAll three replicas may be ready while a downstream database is timing out. Restarting the Pods does not establish a repair. Conversely, one recovering Pod may be harmless if remaining replicas meet the service objective.\n\n## Try it\n\nDefine a small availability and latency objective for a synthetic service. Create alerts for user impact and diagnostic dashboards for capacity, readiness, and rollout progress.\n\n## Check your work\n\nSignals distinguish impact from suspected cause and include a useful time window. Explain how the objective behaves during deployment and dependency failure.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 25,
+      "questionIds": [
+        "kubernetes-hpa-delay",
+        "kubernetes-multi-tenant-limits"
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-controller",
+      "title": "Reconcile the world after a crash",
+      "summary": "Controllers · Idempotency · Finalizers",
+      "body": "## The problem to understand\n\nDesign a controller that provisions one external database for each custom resource. The controller may crash after the database is created but before status is updated. Events can be duplicated, and deletion may occur while provisioning is in progress. Explain the reconcile loop, stable external identity, idempotency, finalizers, status conditions, and retry/backoff behavior.\n\n## The mental model\n\nReconcile desired state against observed state rather than treating each event as an instruction to execute exactly once. Derive or persist a stable external identity from the resource UID, and use external idempotency or lookup by that identity. After a crash, discover the existing database instead of creating another. A status write is not atomic with the external API call, so status alone cannot prove that creation did not occur.\n\nInstall a finalizer before creating external resources. During deletion, stop normal provisioning, locate and remove the external resource idempotently, then remove the finalizer after cleanup is confirmed. Report meaningful conditions and observed generation, use optimistic concurrency for API updates, and classify transient versus permanent failures. Bound retries with backoff and jitter and make ownership explicit. Define how an operator can recover from an unreachable external service without silently leaking resources.\n\n## Check your understanding\n\n- Reconcile observed state and survive create-before-status crashes.\n- Use resource-stable external identity and idempotent lookup/create.\n- Order finalizer installation, deletion cleanup, and finalizer removal.\n- Provide status conditions, concurrency handling, and bounded retries.\n\n## Think one step further\n\nWhat if an operator deletes and recreates a resource with the same name but a different UID?\n\n## Primary reading\n\n- [Kubernetes · controllers](https://kubernetes.io/docs/concepts/architecture/controller/)",
+      "minutes": 10,
+      "questionIds": [
+        "kubernetes-controller",
+        "kubernetes-leader-election",
+        "kubernetes-watch-recovery"
+      ],
+      "moduleId": "kubernetes-4",
+      "kind": "workshop",
+      "objectives": [
+        "Reconcile observed state and survive create-before-status crashes.",
+        "Use resource-stable external identity and idempotent lookup/create."
+      ]
+    },
+    {
+      "id": "lesson-kubernetes-platform-capstone",
+      "moduleId": "kubernetes-4",
+      "kind": "capstone",
+      "title": "Capstone: validate a resilient deployment",
+      "summary": "Integrate workload lifecycle, scheduling, state, identity, and diagnosis",
+      "objectives": [
+        "Integrate workload lifecycle, scheduling, state, identity, and diagnosis.",
+        "Demonstrate recovery through controlled cluster failures."
+      ],
+      "body": "## Core idea\n\nDeploy a small HTTP worker service in a local or disposable cluster. Specify requests, limits, probes, rollout behavior, shutdown, a Service, and scoped identity. Add persistent state only if the exercise needs it and document the storage contract. Describe how a custom reconciler would safely retry any external action.\n\n## Worked example\n\nDuring a rollout, one worker drains slowly and another loses a dependency. The system must expose reduced readiness, avoid endless restart cycles, and keep accepted work governed by an explicit ownership policy.\n\n## Try it\n\nDeliver manifests, an architecture sketch, and a runbook. Exercise a selector error, unschedulable request, slow startup, graceful termination, and dependency failure. Record both Kubernetes state and end-to-end request behavior.\n\n## Check your work\n\nReview least necessary permissions, explained placement, bounded work, and evidence of recovery. A successful apply is only the start; completion requires observing the stated behavior in the test environment.\n\n## Primary reading\n\n- [Kubernetes concepts](https://kubernetes.io/docs/concepts/)",
+      "minutes": 60,
+      "questionIds": [
+        "kubernetes-zone-quorum",
+        "kubernetes-operator-upgrade"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Know containers, processes, HTTP, and basic networking.",
+    "Read YAML and use a local or disposable test cluster."
+  ],
+  "outcomes": [
+    "Explain desired state, reconciliation, ownership, and rollout behavior.",
+    "Diagnose probes, scheduling, resource limits, networking, and storage failures.",
+    "Design least-privilege workload identities and observable service behavior.",
+    "Validate a resilient deployment and reason about custom-controller retries."
+  ],
+  "modules": [
+    {
+      "id": "kubernetes-1",
+      "title": "Declarative workload foundations",
+      "description": "Learn API objects, controllers, Pods, and service discovery.",
+      "level": "Foundation"
+    },
+    {
+      "id": "kubernetes-2",
+      "title": "Scheduling and lifecycle",
+      "description": "Connect placement, resources, rollouts, and termination.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "kubernetes-3",
+      "title": "State and cluster diagnosis",
+      "description": "Reason about persistence, quorum, and unschedulable workloads.",
+      "level": "Advanced"
+    },
+    {
+      "id": "kubernetes-4",
+      "title": "Operational design",
+      "description": "Use identity, observability, and reconciliation to validate a deployment.",
+      "level": "Expert"
+    }
+  ]
+}

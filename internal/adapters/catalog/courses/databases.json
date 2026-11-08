@@ -1,0 +1,314 @@
+{
+  "id": "databases",
+  "topic": "databases",
+  "title": "Database internals: storage, transactions, and recovery",
+  "description": "Trace queries and writes through indexes, page storage, logs, isolation, maintenance, and application transaction boundaries.",
+  "lessons": [
+    {
+      "id": "lesson-databases-pages-records",
+      "moduleId": "databases-1",
+      "kind": "concept",
+      "title": "Rows live inside pages and access paths",
+      "summary": "Separate logical rows from physical storage units",
+      "objectives": [
+        "Separate logical rows from physical storage units.",
+        "Estimate the work behind a lookup or scan."
+      ],
+      "body": "## Core idea\n\nA database organizes stored data using pages or blocks, metadata, and engine-specific record layouts. SQL describes desired results rather than exact physical reads. Buffer caches can satisfy reads without device I/O, but logical page work still consumes CPU and memory bandwidth. Physical locality and row width affect how many pages an operation touches.\n\n## Worked example\n\nWith a deliberately simplified 8 KiB page and 100-byte records, fewer than 81 records fit once headers, slots, and alignment are included. A table of one million rows therefore needs more than the raw payload divided by page size in a realistic layout.\n\n## Try it\n\nEstimate lower-bound payload pages for a synthetic table, then list omitted overhead. Compare reading three selected columns from a wide row store with scanning a narrow index.\n\n## Check your work\n\nThe estimate states its simplifications. Explain why a cached query can still be expensive and distinguish logical page access from physical device reads.\n\n## Primary reading\n\n- [PostgreSQL concurrency control](https://www.postgresql.org/docs/current/mvcc.html)\n- [SQLite write-ahead logging](https://www.sqlite.org/wal.html)",
+      "minutes": 15,
+      "questionIds": [
+        "databases-null-comparison",
+        "databases-count-null"
+      ]
+    },
+    {
+      "id": "lesson-databases-index-structures",
+      "moduleId": "databases-1",
+      "kind": "concept",
+      "title": "B-tree ordering determines useful access",
+      "summary": "Explain equality, range, and ordering behavior in a composite index",
+      "objectives": [
+        "Explain equality, range, and ordering behavior in a composite index.",
+        "Include write and storage costs when adding an index."
+      ],
+      "body": "## Core idea\n\nA B-tree-like index maintains ordered keys and supports seeks followed by range scans. Composite keys use a defined lexicographic order, so a predicate’s relationship to the leading columns matters. Index-only execution depends on selected data and engine visibility rules, not simply the presence of an index. Every maintained index also adds write, storage, and maintenance work.\n\n## Worked example\n\nAn index on tenant and timestamp groups each tenant’s timestamps together. Looking up one tenant’s recent rows fits a contiguous range. Looking up all tenants at one timestamp may require a very different access path.\n\n## Try it\n\nPropose indexes for three queries with different equality, range, and ordering requirements. Include a write-heavy workload and explain which tempting index you would omit.\n\n## Check your work\n\nEach proposed index maps its key order to a concrete query. The answer acknowledges engine-specific optimizer behavior and measures the plan instead of asserting every matching index must be chosen.\n\n## Primary reading\n\n- [PostgreSQL concurrency control](https://www.postgresql.org/docs/current/mvcc.html)\n- [SQLite write-ahead logging](https://www.sqlite.org/wal.html)",
+      "minutes": 15,
+      "questionIds": [
+        "databases-index-cost",
+        "databases-btree-fanout",
+        "databases-keyset-page",
+        "databases-covering-index"
+      ]
+    },
+    {
+      "id": "lesson-databases-query-plans",
+      "moduleId": "databases-1",
+      "kind": "workshop",
+      "title": "Read a plan as a tree of work estimates",
+      "summary": "Distinguish estimated and observed plan values",
+      "objectives": [
+        "Distinguish estimated and observed plan values.",
+        "Identify cardinality errors and repeated inner work."
+      ],
+      "body": "## Core idea\n\nA query plan composes operators such as scans, joins, sorts, and aggregates. Cardinality estimates influence which plan is chosen. An index lookup repeated many times can cost more than one scan, while a sort can spill beyond its memory allowance. Estimated cost units are not universally milliseconds. Execution analysis adds observations but also actually executes the query.\n\n## Worked example\n\nA nested-loop join with 100,000 outer rows can invoke its inner lookup 100,000 times. If the optimizer expected ten outer rows, a cardinality error can explain why the chosen plan performs poorly.\n\n## Try it\n\nUse EXPLAIN and, on safe test data, execution analysis for a filtered join. Record estimated versus actual rows, loops, and sort behavior. Change one index or statistic and compare.\n\n## Check your work\n\nThe explanation follows the operator tree and counts repeated work. It avoids summing inclusive timing values blindly and reports data distribution and cache conditions.\n\n## Primary reading\n\n- [PostgreSQL EXPLAIN guide](https://www.postgresql.org/docs/current/using-explain.html)",
+      "minutes": 25,
+      "questionIds": [
+        "databases-join-cardinality",
+        "databases-explain-estimate"
+      ]
+    },
+    {
+      "id": "lesson-databases-index",
+      "title": "The index has a left edge",
+      "summary": "B-trees · Composite indexes",
+      "body": "## The problem to understand\n\nA table has a B-tree index on `(tenant_id, created_at)`. Which query most directly uses a contiguous leading-prefix range of that index to find one tenant’s recent rows in timestamp order? Assume no other indexes or optimizer-specific skip-scan tricks.\n\n## The mental model\n\nAn equality condition on tenant_id followed by a range on created_at matches the index’s lexicographic ordering. Within one tenant’s contiguous region, timestamps are ordered, so the database can seek to the start of the range and scan forward, subject to the query’s exact ordering and selected columns.\n\nFiltering only created_at does not identify one contiguous leading-prefix interval across all tenants in this model. An index may still be scanned or used in other ways, but that is different from the direct seek-and-range pattern asked here. Covering behavior depends on which columns the query needs.\n\n## Check your understanding\n\n- Use equality on the leading index column.\n- Use the second column for a range within that tenant.\n- Distinguish a direct range seek from scanning or optimizer-specific alternatives.\n\n## Think one step further\n\nWhat index would you consider for a global newest-events feed across every tenant?\n\n## Primary reading\n\n- [SQLite · query planner and multi-column indexes](https://www.sqlite.org/queryplanner.html)",
+      "minutes": 4,
+      "questionIds": [
+        "databases-index"
+      ],
+      "moduleId": "databases-1",
+      "kind": "workshop",
+      "objectives": [
+        "Use equality on the leading index column.",
+        "Use the second column for a range within that tenant."
+      ]
+    },
+    {
+      "id": "lesson-databases-atomic-transactions",
+      "moduleId": "databases-2",
+      "kind": "concept",
+      "title": "A transaction groups effects under a stated guarantee",
+      "summary": "Define an application invariant before choosing a transaction",
+      "objectives": [
+        "Define an application invariant before choosing a transaction.",
+        "Distinguish atomicity, isolation, and durability."
+      ],
+      "body": "## Core idea\n\nAtomicity groups changes so they commit or abort together within the transaction boundary. Isolation constrains concurrent observations and interactions. Durability concerns survival after acknowledgement under configured failure assumptions. These are distinct properties. Put all state needed for a local invariant in the same protected operation and understand which external effects lie outside it.\n\n## Worked example\n\nCreating a job and recording its request identifier in one transaction can prevent a committed job without a corresponding deduplication record. Sending an external notification inside application code does not automatically make that notification part of the database transaction.\n\n## Try it\n\nDefine invariants for a reservation table and request log. Draw begin, reads, validation, writes, commit, and response, then place a failure between each pair of steps.\n\n## Check your work\n\nEvery committed state preserves the local invariant. The answer identifies lock or isolation needs under concurrency and states exactly what commit acknowledgement promises.\n\n## Primary reading\n\n- [PostgreSQL concurrency control](https://www.postgresql.org/docs/current/mvcc.html)\n- [SQLite write-ahead logging](https://www.sqlite.org/wal.html)",
+      "minutes": 15,
+      "questionIds": [
+        "databases-acid-scope",
+        "databases-unique-constraint",
+        "databases-foreign-key",
+        "databases-cross-shard-invariant"
+      ]
+    },
+    {
+      "id": "lesson-databases-mvcc-visibility",
+      "moduleId": "databases-2",
+      "kind": "concept",
+      "title": "MVCC snapshots and version lifetimes",
+      "summary": "Explain why readers can observe different versions",
+      "objectives": [
+        "Explain why readers can observe different versions.",
+        "Connect long-running snapshots to retained history."
+      ],
+      "body": "## Core idea\n\nMVCC maintains versions so readers can observe a consistent view according to the isolation level and engine rules. It reduces some reader/writer conflicts but does not eliminate every lock or anomaly. Old versions must remain while an active snapshot can still need them. Cleanup and visibility metadata therefore connect transaction duration to storage and maintenance costs.\n\n## Worked example\n\nA reader begins before an update commits and may keep seeing the previous row version under its snapshot rules. A newer transaction can see the committed version. The old version cannot simply be removed while the first reader still requires it.\n\n## Try it\n\nDraw two readers and one writer across commit times. Choose a specific documented isolation level and mark which version each statement can see.\n\n## Check your work\n\nThe trace follows the selected engine’s rules rather than treating all MVCC systems identically. Explain how an unnecessarily long transaction can retain history or interfere with maintenance.\n\n## Primary reading\n\n- [PostgreSQL isolation levels](https://www.postgresql.org/docs/current/transaction-iso.html)",
+      "minutes": 15,
+      "questionIds": [
+        "databases-read-committed",
+        "databases-mvcc-vacuum",
+        "databases-replica-lag"
+      ]
+    },
+    {
+      "id": "lesson-databases-wal",
+      "title": "The log must arrive before the page",
+      "summary": "WAL · Crash recovery · Durability",
+      "body": "## The problem to understand\n\nExplain the write-ahead logging rule for a database that updates cached data pages. Why must relevant log records reach durable storage before a dirty page containing those changes is persisted? Distinguish that rule from the condition for acknowledging a durable transaction commit. Include what recovery does with committed and incomplete transactions.\n\n## The mental model\n\nThe log must contain enough durable recovery information before the corresponding modified data page can reach stable storage. Otherwise a crash could leave a changed page without a durable account of how to recover it. This is the write-ahead rule; it constrains flush ordering, not necessarily immediate data-page flushing on every write.\n\nAcknowledging a durable commit generally requires the transaction’s commit decision and required log records to be durably persisted under the configured durability contract. Data pages can be written later. Recovery redoes committed changes as required and handles incomplete work according to the engine’s architecture: some engines undo, while others ignore uncommitted log tails or versions. SQLite WAL uses a specific commit/checkpoint protocol, so do not project a generic undo/redo design onto every database.\n\n## Check your understanding\n\n- Order recovery log persistence before dependent dirty-page persistence.\n- Separate WAL ordering from durable commit acknowledgment.\n- Explain redo/incomplete-transaction behavior without assuming every engine uses undo.\n\n## Think one step further\n\nHow does group commit improve throughput while preserving a durable acknowledgment contract?\n\n## Primary reading\n\n- [SQLite · write-ahead logging](https://www.sqlite.org/wal.html)",
+      "minutes": 5,
+      "questionIds": [
+        "databases-wal"
+      ],
+      "moduleId": "databases-2",
+      "kind": "workshop",
+      "objectives": [
+        "Order recovery log persistence before dependent dirty-page persistence.",
+        "Separate WAL ordering from durable commit acknowledgment."
+      ]
+    },
+    {
+      "id": "lesson-databases-write-skew",
+      "title": "No row conflict, broken invariant",
+      "summary": "Snapshot isolation · Write skew",
+      "body": "## The problem to understand\n\nTwo doctors are on call. The invariant is that at least one remains on call. Under snapshot isolation, two transactions each read that both are on call, then each updates only its own row to go off call. Both commit because they modify different rows. Explain the anomaly and offer a concurrency-safe repair. A unique constraint on doctor_id is already present.\n\n## The mental model\n\nThis is write skew. Both decisions use a snapshot in which the other doctor remains available, and the transactions write disjoint rows, so ordinary same-row write-conflict detection does not necessarily reject either. The final state violates an invariant over a set of rows.\n\nUse a serializable execution strategy with appropriate conflict detection/retries, or explicitly serialize the decision by locking a shared coordination row or all relevant rows before checking and updating under a suitable isolation contract. Recheck the invariant inside that protected transaction. The existing unique constraint only prevents duplicate doctor identities; it cannot express the at-least-one-across-rows condition. A correct repair must include the retry/error path and avoid an unprotected pre-check outside the transaction.\n\n## Check your understanding\n\n- Identify snapshot-based write skew on disjoint rows.\n- Connect the anomaly to the cross-row invariant.\n- Offer serializable retries or a correctly scoped shared lock.\n- Explain why the existing unique constraint and external pre-check are insufficient.\n\n## Think one step further\n\nWhy might SELECT FOR UPDATE on only the current doctor’s row fail to repair the invariant?\n\n## Primary reading\n\n- [PostgreSQL · transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html)",
+      "minutes": 6,
+      "questionIds": [
+        "databases-write-skew"
+      ],
+      "moduleId": "databases-2",
+      "kind": "workshop",
+      "objectives": [
+        "Identify snapshot-based write skew on disjoint rows.",
+        "Connect the anomaly to the cross-row invariant."
+      ]
+    },
+    {
+      "id": "lesson-databases-lsm-compaction",
+      "moduleId": "databases-3",
+      "kind": "concept",
+      "title": "LSM trees move work into flush and compaction",
+      "summary": "Trace updates through mutable state and sorted runs",
+      "objectives": [
+        "Trace updates through mutable state and sorted runs.",
+        "Explain read, write, and space amplification tradeoffs."
+      ],
+      "body": "## Core idea\n\nAn LSM design buffers updates, flushes sorted runs, and merges them through compaction. Reads may consult multiple structures, with indexes and filters helping skip work. Compaction consumes bandwidth and temporary space while reclaiming obsolete versions under safe retention rules. A fast foreground write can defer substantial work rather than eliminate it.\n\n## Worked example\n\nA key appears with values v1 and v2 in different runs, plus a later tombstone. A read needs ordering metadata to select the visible state. Removing the tombstone before older values are safely excluded can resurrect deleted data.\n\n## Try it\n\nSimulate flushes of three small sorted runs and one compaction. Track key versions, bytes written, read candidates, and deletion retention.\n\n## Check your work\n\nThe result preserves the newest visible state and explains when obsolete data can be discarded. State the compaction policy assumptions instead of assigning one amplification number to every LSM engine.\n\n## Primary reading\n\n- [RocksDB overview](https://github.com/facebook/rocksdb/wiki/RocksDB-Overview)",
+      "minutes": 15,
+      "questionIds": [
+        "databases-lsm-amplification",
+        "databases-write-amplification"
+      ]
+    },
+    {
+      "id": "lesson-databases-contention-retries",
+      "moduleId": "databases-3",
+      "kind": "concept",
+      "title": "Contention, deadlocks, and transaction retries",
+      "summary": "Recognize the scope of a retryable transaction failure",
+      "objectives": [
+        "Recognize the scope of a retryable transaction failure.",
+        "Keep retry attempts bounded and free of duplicated external effects."
+      ],
+      "body": "## Core idea\n\nConcurrent transactions can wait, deadlock, or abort under isolation enforcement. A retry normally reruns the complete logical transaction with fresh reads, not merely the final failed statement. Keep transactions short and use a consistent lock order where possible. Retry policies need limits and jitter; external side effects performed during an attempt can escape rollback.\n\n## Worked example\n\nTwo transfers lock account rows in opposite order and deadlock. Ordering row locks consistently can reduce that pattern. If one attempt already sent an email before aborting, rerunning it can send another even though the database rolled back.\n\n## Try it\n\nWrite retry pseudocode for a serialization failure in a test application. Include attempt limits, fresh transaction creation, and external-effect handling.\n\n## Check your work\n\nThe retry preserves the original logical intent but recomputes state-dependent decisions. It distinguishes retryable failures from invalid requests and reports an exhausted retry budget.\n\n## Primary reading\n\n- [PostgreSQL isolation levels](https://www.postgresql.org/docs/current/transaction-iso.html)",
+      "minutes": 15,
+      "questionIds": [
+        "databases-lock-order",
+        "databases-pool-queue",
+        "databases-serializable-retry"
+      ]
+    },
+    {
+      "id": "lesson-databases-tombstone",
+      "title": "Deleting a value without resurrecting it",
+      "summary": "LSM trees · Compaction · Tombstones",
+      "body": "## The problem to understand\n\nAn LSM database records a delete as a tombstone in a newer sorted run while an older run still contains the value. Explain why dropping the tombstone during an arbitrary compaction can resurrect the deleted value. State the information needed before it can be discarded, and how snapshots and replication complicate the decision.\n\n## The mental model\n\nReads merge versions across runs. The newer tombstone hides an older value. If a compaction drops the tombstone without also proving that no older visible version remains in any overlapping source, a later read may discover the old value and return it again. A delete marker is live semantic information until the shadowed history is safely irrelevant.\n\nSafe removal depends on compaction coverage, key/version bounds, and the oldest snapshot that must remain readable. Older snapshots may still require prior versions. Replicated systems add repair and lag constraints: a stale replica can reintroduce a value if deletion history is discarded before convergence is guaranteed. The precise grace/repair policy is engine-specific. Measure tombstone accumulation and read amplification, but do not trade correctness for smaller files by using an arbitrary age threshold alone.\n\n## Check your understanding\n\n- Explain merge precedence and resurrection after premature tombstone removal.\n- Require proof about all older overlapping versions.\n- Account for snapshot visibility and replica/repair lag.\n\n## Think one step further\n\nHow do bottommost-level compactions make tombstone removal easier to prove?\n\n## Primary reading\n\n- [RocksDB · compaction](https://github.com/facebook/rocksdb/wiki/Compaction)",
+      "minutes": 6,
+      "questionIds": [
+        "databases-tombstone"
+      ],
+      "moduleId": "databases-3",
+      "kind": "workshop",
+      "objectives": [
+        "Explain merge precedence and resurrection after premature tombstone removal.",
+        "Require proof about all older overlapping versions."
+      ]
+    },
+    {
+      "id": "lesson-databases-sqlite-writer",
+      "title": "WAL did not give you many writers",
+      "summary": "SQLite · WAL · Transactions",
+      "body": "## The problem to understand\n\nA SQLite service enables WAL and opens 30 database connections. Reads remain fast, but bursts of writes produce SQLITE_BUSY and long tails. Some transactions hold a write lock while performing network calls. Explain WAL’s concurrency contract and propose a repair involving transaction scope, writer coordination, busy handling, and checkpoint observability.\n\n## The mental model\n\nSQLite WAL allows readers and a writer to overlap in many cases, but it still has one writer at a time. Opening more connections does not create concurrent write capacity. Holding a write transaction across network I/O extends the serialization point and amplifies queueing. A busy timeout can wait for contention, but it does not add throughput and can worsen tails.\n\nKeep write transactions short, move network work outside the locked interval with a sound state protocol, and consider a bounded writer queue or intentional connection limit for write-heavy local services. Classify busy outcomes carefully: some read-to-write upgrade conflicts require restarting the transaction rather than blindly retrying one statement. Observe write duration, queue age, WAL size, checkpoint progress, and long-lived readers that prevent checkpoint advancement. Load-test with realistic write bursts.\n\n## Check your understanding\n\n- State the single-writer constraint despite WAL and many connections.\n- Remove unbounded/network waits from write transactions.\n- Bound coordination and distinguish waitable contention from transaction restart.\n- Observe checkpoint/WAL growth and long reader lifetimes.\n\n## Think one step further\n\nWhy can a long-lived read transaction cause the WAL file to grow even when writes keep succeeding?\n\n## Primary reading\n\n- [SQLite · WAL concurrency](https://www.sqlite.org/wal.html)",
+      "minutes": 6,
+      "questionIds": [
+        "databases-sqlite-writer",
+        "databases-checkpoint-pressure"
+      ],
+      "moduleId": "databases-3",
+      "kind": "workshop",
+      "objectives": [
+        "State the single-writer constraint despite WAL and many connections.",
+        "Remove unbounded/network waits from write transactions."
+      ]
+    },
+    {
+      "id": "lesson-databases-backup-recovery",
+      "moduleId": "databases-4",
+      "kind": "concept",
+      "title": "A backup is useful only with a recovery procedure",
+      "summary": "Separate crash recovery from restoration after data loss",
+      "objectives": [
+        "Separate crash recovery from restoration after data loss.",
+        "State recovery-point and recovery-time objectives."
+      ],
+      "body": "## Core idea\n\nCrash recovery uses durable local state such as logs to restore consistency after an interruption. Backups address additional failures, including loss or corruption of primary storage. A backup must capture a coherent state using an engine-supported mechanism. Recovery-point objectives describe acceptable data loss; recovery-time objectives describe restoration time. Replication is not automatically a backup against accidental deletion.\n\n## Worked example\n\nCopying only a database’s main file while writes live in a WAL may omit committed state or produce an unsupported snapshot. An engine-provided backup procedure coordinates the required consistency boundary.\n\n## Try it\n\nWrite a backup and restore runbook for a local test database. Restore to a separate location, verify row counts and invariants, and measure the age of restored data and time to readiness.\n\n## Check your work\n\nThe procedure uses the engine’s documented mechanism and includes verification. It distinguishes process-kill tests from complete storage loss and proves that the backup can be read.\n\n## Primary reading\n\n- [SQLite backup API](https://www.sqlite.org/backup.html)",
+      "minutes": 15,
+      "questionIds": [
+        "databases-backup-restore"
+      ]
+    },
+    {
+      "id": "lesson-databases-schema-evolution",
+      "moduleId": "databases-4",
+      "kind": "workshop",
+      "title": "Evolve schemas across overlapping application versions",
+      "summary": "Plan compatible schema changes in stages",
+      "objectives": [
+        "Plan compatible schema changes in stages.",
+        "Bound migration work and verify backfill progress."
+      ],
+      "body": "## Core idea\n\nDuring a rollout, old and new application versions may overlap. A destructive schema change can break one version before deployment completes. Expand-and-contract approaches add compatible structure, move writers and readers deliberately, backfill with progress tracking, and remove old structure only after dependencies are gone. Large migrations need resource budgets, restart behavior, and verification.\n\n## Worked example\n\nRenaming a required column in one step can break old binaries. Adding a new nullable column, deploying compatible code, backfilling, verifying, and later removing the old column makes the transition explicit, though exact locking costs remain engine-specific.\n\n## Try it\n\nPlan a migration from one text field to two structured fields. Define how mixed-version writes remain consistent, how backfill resumes, and how validation detects missing or divergent data.\n\n## Check your work\n\nEvery intermediate state supports the intended application versions. The plan includes rollback boundaries and measures lock and I/O impact on a test dataset.\n\n## Primary reading\n\n- [PostgreSQL concurrency control](https://www.postgresql.org/docs/current/mvcc.html)\n- [SQLite write-ahead logging](https://www.sqlite.org/wal.html)",
+      "minutes": 25,
+      "questionIds": [
+        "databases-online-migration"
+      ]
+    },
+    {
+      "id": "lesson-databases-outbox",
+      "title": "One transaction, two systems",
+      "summary": "Outbox · CDC · Delivery semantics",
+      "body": "## The problem to understand\n\nAn order service must commit an order in SQLite and publish an OrderCreated event to a broker. A process can crash between any two steps. Design a transactional outbox. Explain atomic persistence, dispatcher concurrency, duplicate delivery, consumer deduplication, ordering scope, retention, and how to observe events that are committed but not yet delivered.\n\n## The mental model\n\nInsert the order and an outbox row with a stable event ID in the same database transaction. A dispatcher reads committed outbox entries and publishes them, then marks delivery according to an explicit acknowledgment protocol. A crash after broker acceptance but before marking delivered can cause a duplicate; marking first can lose the event. The basic pattern therefore provides recoverable at-least-once delivery, not magical exactly-once across systems.\n\nUse leases/claims or a bounded single dispatcher to coordinate publishers, while retaining stable event identities across retries. Consumers deduplicate atomically with their business effects where possible. Define ordering per aggregate or partition with sequence numbers rather than claiming global order from concurrent dispatchers. Retain data for replay/audit and track oldest pending age, retry counts, failures, and backlog. A poison event needs an explicit escalation/quarantine path that does not silently discard business state.\n\n## Check your understanding\n\n- Commit business state and outbox entry atomically.\n- Explain the publish-before-mark crash and at-least-once duplicate semantics.\n- Coordinate dispatchers and deduplicate consumer effects with stable identities.\n- Define ordering, retention, poison handling, and lag observability.\n\n## Think one step further\n\nHow would the dispatcher preserve per-order ordering while publishing different orders in parallel?\n\n## Primary reading\n\n- [Debezium · outbox event router](https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html)",
+      "minutes": 10,
+      "questionIds": [
+        "databases-outbox"
+      ],
+      "moduleId": "databases-4",
+      "kind": "workshop",
+      "objectives": [
+        "Commit business state and outbox entry atomically.",
+        "Explain the publish-before-mark crash and at-least-once duplicate semantics."
+      ]
+    },
+    {
+      "id": "lesson-databases-transactional-app-capstone",
+      "moduleId": "databases-4",
+      "kind": "capstone",
+      "title": "Capstone: a durable job queue and outbox",
+      "summary": "Integrate indexes, isolation, retries, recovery, and external delivery",
+      "objectives": [
+        "Integrate indexes, isolation, retries, recovery, and external delivery.",
+        "Demonstrate invariants across crashes and duplicate attempts."
+      ],
+      "body": "## Core idea\n\nBuild a local transactional job store with stable request IDs and an outbox of notifications. Create the job, deduplication record, and outbox entry in one transaction. A dispatcher delivers notifications with an explicit retry and deduplication contract. Use SQLite or PostgreSQL and document the selected engine’s concurrency and durability settings.\n\n## Worked example\n\nThe dispatcher sends a notification and crashes before recording success. Redelivery must be expected. The database transaction prevents missing local outbox records but cannot by itself make an arbitrary remote recipient execute exactly once.\n\n## Try it\n\nDeliver schema, query plans for enqueue and dispatch, transaction pseudocode or implementation, and tests for duplicate requests, concurrent claim attempts, crash points, and restore. Include a restartable migration and a restored-backup check.\n\n## Check your work\n\nReview local atomic invariants, external delivery semantics, bounded retries, useful indexes, and successful restoration. State precisely which effects are protected by the transaction and which require cooperation from the receiver.\n\n## Primary reading\n\n- [PostgreSQL concurrency control](https://www.postgresql.org/docs/current/mvcc.html)\n- [SQLite write-ahead logging](https://www.sqlite.org/wal.html)",
+      "minutes": 60,
+      "questionIds": [
+        "databases-cdc-boundary"
+      ]
+    }
+  ],
+  "prerequisites": [
+    "Write simple SQL and understand maps, trees, and files.",
+    "Know basic concurrency and byte-size arithmetic."
+  ],
+  "outcomes": [
+    "Explain index ordering, query plans, and storage access costs.",
+    "Trace WAL, recovery, MVCC visibility, and isolation anomalies.",
+    "Compare B-tree and LSM tradeoffs under an explicit workload.",
+    "Design a transactional application boundary with retries, backups, and observable behavior."
+  ],
+  "modules": [
+    {
+      "id": "databases-1",
+      "title": "Pages, keys, and query work",
+      "description": "Establish physical storage, indexes, and execution plans.",
+      "level": "Foundation"
+    },
+    {
+      "id": "databases-2",
+      "title": "Transactions and durability",
+      "description": "Study atomic state changes, WAL, and visibility.",
+      "level": "Intermediate"
+    },
+    {
+      "id": "databases-3",
+      "title": "Maintenance and concurrency",
+      "description": "Connect compaction, writer limits, and retained history.",
+      "level": "Advanced"
+    },
+    {
+      "id": "databases-4",
+      "title": "Application boundaries",
+      "description": "Integrate schema evolution, recovery, and external delivery.",
+      "level": "Expert"
+    }
+  ]
+}
