@@ -4,7 +4,7 @@ import { reflectionScore } from "./model";
 import { practiceStorage } from "./storage";
 
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Question } from "../../entities/curriculum/model";
 import type { Attempt, Feedback } from "../../entities/learning/model";
 import { useOverlays } from "../../shared/state/OverlayProvider";
@@ -15,9 +15,8 @@ import { rememberSessionResult } from "../sessions/storage";
 export function useQuestionWorkspace() {
   const { data, refresh } = useWorkspace();
   const { auth, toast } = useOverlays();
-  const location = useLocation();
   const navigate = useNavigate();
-  const id = location.pathname.split("/").pop()!;
+  const { id = "" } = useParams<"id">();
   const [params] = useSearchParams();
   const [q, setQ] = useState<Question | null>(null),
     [error, setError] = useState(""),

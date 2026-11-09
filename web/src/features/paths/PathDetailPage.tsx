@@ -6,7 +6,7 @@ import {
   Circle,
   GitBranch,
 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { formats, levels } from "../../entities/curriculum/labels";
 import { pathIcon } from "../../entities/curriculum/presentation";
 import { color, cx } from "../../shared/lib/styles";
@@ -15,10 +15,8 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 
 export function PathDetail() {
   const { data } = useWorkspace();
-  const location = useLocation();
-  const path = data.paths.find(
-    (p) => p.id === location.pathname.split("/").pop(),
-  );
+  const { id } = useParams<"id">();
+  const path = data.paths.find((p) => p.id === id);
   if (!path)
     return (
       <Empty
