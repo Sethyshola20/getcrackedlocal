@@ -95,7 +95,7 @@ export function Sidebar({ mobile }: { mobile: boolean }) {
             >
               <Icon size={15} style={{ color: t.color }} />
               <span>{t.name}</span>
-              <span className="topic-nav-count">6</span>
+              <span className="topic-nav-count"></span>
             </Link>
           );
         })}
