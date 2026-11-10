@@ -586,7 +586,7 @@
       "Send",
       "Sync"
     ],
-    "prompt": "A struct containing a RefCell<T> is shared between two threads through an Arc: each thread receives either ownership of the value or only a shared reference to it. Which statements correctly describe Rust's Send and Sync marker traits in that sharing?",
+    "prompt": "A struct containing a RefCell<T> is shared between two threads through an Arc: each thread receives either an owning Arc handle (shared ownership) or only a shared reference to it. Which statements correctly describe Rust's Send and Sync marker traits in that sharing?",
     "solution": "Send means ownership can safely cross thread boundaries. Sync means shared references can safely cross them: T is Sync when &T is Send. Arc supplies shared ownership but cannot make an arbitrary non-thread-safe inner value safe.",
     "hints": [
       "Ask whether the thread receives T or &T.",
