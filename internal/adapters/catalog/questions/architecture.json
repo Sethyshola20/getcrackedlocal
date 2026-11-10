@@ -376,7 +376,7 @@
       "SIMD",
       "Vectorization"
     ],
-    "prompt": "How many 32-bit elements fit in a 256-bit vector register, ignoring masks and packing overhead?",
+    "prompt": "A graphics kernel blends pixels lane-parallel, packing 32-bit channels into 256-bit vector registers. How many elements fit in one register, ignoring masks and packing overhead?",
     "solution": "8, because 256/32=8. This is lane capacity, not a promise of an eightfold application speedup. Data layout, dependency chains, memory bandwidth, and supported operations determine realized gains.",
     "hints": [
       "Divide register width by element width.",
@@ -490,7 +490,7 @@
   {
     "id": "architecture-prefetch-stride",
     "topic": "architecture",
-    "title": "Predictability helps the memory subsystem",
+    "title": "Software prefetch must pay for itself",
     "difficulty": "Intermediate",
     "format": "explanation",
     "minutes": 8,
@@ -498,18 +498,18 @@
       "Prefetching",
       "Memory access"
     ],
-    "prompt": "Why may sequential array traversal outperform an equally sized randomly linked traversal, even when both eventually read every element?",
-    "solution": "Sequential access provides spatial locality and predictable future addresses, allowing prefetching and overlapping memory requests. Random pointer traversal can require one load's result before finding the next address, reducing memory-level parallelism. Equal bytes read do not imply equal latency hiding or useful cache-line utilization.",
+    "prompt": "A graph walk visits nodes in an order fixed by a previous pass, so the address of each next node is already known one step ahead. A teammate inserts explicit software prefetches for those addresses and measures no speedup — occasionally a regression. Explain when a software prefetch can beat waiting on hardware prediction, why an unused or late prefetch wastes line utilization and can pollute the cache, and why sweeping many scattered nodes adds TLB pressure that prefetching does not relieve.",
+    "solution": "A software prefetch converts an address that is already known into an early memory request, buying latency coverage for irregular patterns hardware prefetchers cannot follow. It is a hint, not a demand: a line that arrives late, or is never consumed, spends bandwidth and can evict useful lines, so the loop must consume prefetched data promptly to profit. Scattered nodes also mean few useful bytes per fetched line, so even successful prefetches pay full line cost for little payload, and the wider the scatter the more bandwidth each visit consumes. Reaching many unrelated pages additionally churns the TLB, and prefetching data does not prefetch translations, so TLB misses persist and can dominate once the walk outgrows the TLB. Measure the hint against the unmodified loop — under the right lead distance and consumption rate it helps; otherwise it is pure overhead.",
     "hints": [
-      "Ask when the next address becomes known.",
-      "One cache line contains multiple nearby elements."
+      "When must the prefetch arrive for the loop to actually consume that line?",
+      "Count useful bytes per fetched line and translations per node, not just nodes visited."
     ],
     "rubric": [
-      "Explain spatial locality.",
-      "Explain prediction and overlap.",
-      "Identify dependent address generation."
+      "Explain software prefetch as an early hint covering latency for irregular addresses.",
+      "Identify waste from unused or late prefetches and from low useful bytes per line.",
+      "Identify TLB pressure from scattered access as a cost prefetching does not remove."
     ],
-    "followUp": "When could software prefetching fail to help pointer traversal?",
+    "followUp": "What experiment separates a prefetch distance that is too short from one that is too long?",
     "references": [
       {
         "title": "Intel architecture and optimization manuals",
@@ -921,16 +921,16 @@
       "Amdahl's law",
       "Performance modeling"
     ],
-    "prompt": "A workload spends 80% of its time in a component improved by 4×, while the remaining 20% is unchanged. Ignoring overhead, what is overall speedup?",
-    "solution": "2.5×, from 1/(0.2+0.8/4)=1/0.4. The result assumes the fractions describe the original workload and the optimization does not shift work or add overhead. A fourfold component improvement does not yield a fourfold total improvement.",
+    "prompt": "A workload spends 80% of its runtime in a component improved 4×, with the remaining 20% unchanged. After the optimization lands, profiling shows its integration stretched that unchanged part to one and a half times its original cost. A teammate still quotes 2.5× from the plain Amdahl formula. Ignoring other overheads, what is the actual overall speedup?",
+    "solution": "2×, from 1/(0.3+0.8/4)=1/0.5. Amdahl's 1/(s+(1-s)/p) form assumes the fractions of the original runtime stay fixed; the integration shifted work into the serial path, so the premise fails and the runtime must be rebuilt from its parts: 0.3 serial plus 0.8/4 for the improved component. The teammate's 2.5× answers a different question — one where the optimization touches nothing else. A measured speedup below the formula's prediction is the signature of work moved into the unimproved fraction, not an arithmetic mistake.",
     "hints": [
-      "Normalize original runtime to one.",
-      "Only the 0.8 fraction is divided by four."
+      "The 2.5× figure assumes the unimproved share still costs 0.2 of the original runtime — the stretch changed it.",
+      "Rebuild the new runtime from its parts — stretched serial plus improved fraction — and invert."
     ],
     "rubric": [
-      "Compute new runtime 0.4.",
-      "Invert to obtain 2.5.",
-      "State fixed-workload assumptions."
+      "Stretch the unchanged fraction to 0.2 times 1.5, i.e. 0.3 of the original runtime.",
+      "Sum 0.3 + 0.8/4 to a 0.5 new runtime and invert to obtain 2.",
+      "Reject the fixed-fraction 2.5× prediction when integration shifts work into the serial path."
     ],
     "followUp": "What is the maximum speedup if that component becomes infinitely fast?",
     "references": [
@@ -939,6 +939,6 @@
         "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
       }
     ],
-    "expected": "2.5"
+    "expected": "2"
   }
 ]

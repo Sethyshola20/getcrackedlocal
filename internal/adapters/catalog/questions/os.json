@@ -19,7 +19,7 @@
     ],
     "hints": [
       "The kernel may delay allocating physical memory until it is touched.",
-      "For each option, ask twice: does taking this fault require fetching data from storage, or only changing a right on a page that is already resident?"
+      "For each option, ask twice: does taking this fault require fetching data from storage, or only installing or copying a page without any storage fetch?"
     ],
     "followUp": "Why can pre-touching a large arena improve tail latency but increase startup time and memory commitment?",
     "references": [
@@ -275,7 +275,7 @@
       "System calls",
       "Privileges"
     ],
-    "prompt": "Explain the distinction between a system call and a C library function. Why is one library call not necessarily one kernel transition?",
+    "prompt": "A tracing tool shows a program that calls printf ten times making a single write system call. Explain the distinction between a system call and a C library function, and why one library call is not necessarily one kernel transition.",
     "solution": "A system call invokes a kernel service through an architecture-defined entry mechanism. A library function is a userspace API that may perform no syscall, one syscall, or several. Buffering can combine many library writes into fewer kernel calls, while some time queries can use userspace-accessible kernel-provided data.",
     "hints": [
       "API layering is not one-to-one.",
@@ -336,7 +336,7 @@
       "Scheduling",
       "Context switches"
     ],
-    "prompt": "Which can contribute to the cost of switching execution between tasks?",
+    "prompt": "A latency dashboard blames bursts of context switches: threads wake, run for microseconds, and sleep thousands of times per second. Which costs can those switches contribute?",
     "solution": "Saving and restoring execution state costs work, and changes in working set can affect caches, TLBs, and branch prediction. The exact cost depends on architecture and whether address spaces change. A context switch does not inherently require copying all process memory.",
     "hints": [
       "Execution state is small compared with an entire address space.",
@@ -738,26 +738,27 @@
   {
     "id": "os-rename-durable",
     "topic": "os",
-    "title": "Atomic visibility does not imply crash persistence",
+    "title": "Two renames are never one atomic switch",
     "difficulty": "Advanced",
     "format": "explanation",
     "minutes": 12,
     "tags": [
       "Filesystems",
-      "Rename"
+      "Rename",
+      "Crash consistency"
     ],
-    "prompt": "A service writes a temporary file and renames it over a configuration file. Explain the difference between atomic replacement visibility and crash durability.",
-    "solution": "A same-filesystem rename can provide atomic namespace replacement, so readers see an old or new name binding. Durability requires the appropriate synchronization of file contents and containing directory under the filesystem's contract. Check all errors and recovery states; atomic visibility alone does not prove the new bytes survive power loss.",
+    "prompt": "A service replaces two files that depend on each other — a database file and its index — by writing updated copies and renaming each over its original. Explain why no ordering of two separate renames gives readers a single atomic switch, and evaluate what protects them across a crash: choosing which file to rename first, staging both behind one indirection file that is renamed last, or journaling the intent and replaying it at recovery.",
+    "solution": "Between the two renames there is always a window in which one binding is new and the other is still old; a crash inside that window freezes a mismatched pair for every reader. Ordering is the cheapest defense: perform first the rename whose new file tolerates an old partner, so the survivable partial state is the one readers can be left observing. An indirection file collapses the pair into one rename — write and synchronize both files, then atomically rename a single pointer to the new generation — but every read pays an extra hop and the pointer file becomes the durability boundary that must itself be synchronized before the switch. A journal records the intended change before the renames and marks completion; recovery replays unfinished transactions, which stays correct only if replay is idempotent and the journal's own records reach durable storage before the renames. Each strategy relocates the crash window; none eliminates the need to decide what a reader may see mid-transition.",
     "hints": [
-      "Readers and a reboot observe different boundaries.",
-      "Directory entries are metadata too."
+      "After the first rename and before the second, what does a reader see, and what does a crash at that instant freeze?",
+      "Could one rename carry the whole switch, or could a record made beforehand let startup finish what the crash interrupted?"
     ],
     "rubric": [
-      "Separate visibility and durability.",
-      "Synchronize content and namespace appropriately.",
-      "Check failure and recovery behavior."
+      "Locate the crash window between the two renames and the mismatched state it freezes.",
+      "Evaluate rename order by which partial state readers can be left observing.",
+      "Present indirection or journaling with its own durability and replay requirements."
     ],
-    "followUp": "Why should the temporary file be created on the destination filesystem?",
+    "followUp": "What must reach durable storage before and after the indirection file's rename, and what does that single rename still not persist?",
     "references": [
       {
         "title": "Linux manual · fsync",
