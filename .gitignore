@@ -6,3 +6,5 @@ data/*.db*
 bin/
 .DS_Store
 *.tsbuildinfo
+.idea/
+.skywalker/
