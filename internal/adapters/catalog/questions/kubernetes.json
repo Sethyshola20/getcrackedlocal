@@ -337,7 +337,7 @@
       "Namespaces",
       "Isolation"
     ],
-    "prompt": "Which statements about Kubernetes namespaces are correct?",
+    "prompt": "Team alpha deploys in namespace alpha and team bravo in namespace bravo on one shared cluster. Bravo expects the namespace split alone to keep the two teams' workloads isolated, and the two teams list what they believe namespaces already do. Which of their claims hold?",
     "solution": "Namespaces scope many names and policies but are not an automatic network isolation boundary. Nodes and certain other resources are cluster-scoped. NetworkPolicy, authorization, quotas, and other controls must be configured explicitly to establish the intended isolation.",
     "hints": [
       "Resource scope and traffic policy differ.",

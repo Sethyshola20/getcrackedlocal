@@ -270,18 +270,18 @@
       "Consistency",
       "Linearizability"
     ],
-    "prompt": "Which statement captures linearizability for completed operations on a shared object?",
-    "solution": "Operations can be placed in a single sequential order respecting real-time precedence, with each taking effect between invocation and response. Concurrent operations may be ordered either way if the object's semantics allow it. Linearizability is stronger than merely having all replicas eventually converge.",
+    "prompt": "A replicated store advertises linearizable reads and writes for key k. At t=3, one client's write of k=v2 completes and is acknowledged. At t=5, a different client invokes a read of k and the store returns the previous value v1. Which judgment about this history is correct?",
+    "solution": "The write's acknowledgment at t=3 precedes the read's invocation at t=5, so every legal sequential order must place the read after the write and return v2 or newer; returning v1 therefore violates linearizability. Sequential consistency is not necessarily violated: it constrains each client's program order, and with two independent single-operation clients an order that reads first remains legal. Causal consistency is not violated either: the reading client never observed the write, so the two operations are causally unrelated. Eventual convergence is weaker than the advertised guarantee and does not excuse the stale read.",
     "hints": [
-      "Respect a response that occurs before the next invocation.",
-      "Overlapping calls are concurrent."
+      "Compare the two intervals: did the write's acknowledgment land before the read was even invoked?",
+      "If the order must respect that precedence, what is the newest value the read is allowed to return?"
     ],
     "rubric": [
-      "Identify a legal sequential order.",
-      "Preserve real-time precedence.",
-      "Distinguish eventual convergence."
+      "Names linearizability, via real-time precedence, as the violated property.",
+      "Grounds the verdict in the write completing at t=3 before the read is invoked at t=5.",
+      "Rejects sequential-consistency and causal-consistency verdicts as not necessarily violated."
     ],
-    "followUp": "How does this definition treat two overlapping writes?",
+    "followUp": "If the read had overlapped the write's interval instead, could returning v1 have been legal — and why does removing the overlap change the verdict?",
     "references": [
       {
         "title": "Jepsen · linearizability",
@@ -289,10 +289,10 @@
       }
     ],
     "options": [
-      "All replicas eventually agree, regardless of reads",
-      "Operations appear atomic in a real-time-respecting order",
-      "Every client sees only its own writes",
-      "Messages are delivered in wall-clock timestamp order"
+      "No guarantee is broken: the replica that answered will eventually converge, which is all linearizability demands",
+      "Linearizability is violated: a read invoked after a completed write must return v2 or newer, never v1",
+      "Sequential consistency is violated: no read may return a value older than any already-completed write",
+      "Causal consistency is violated: any write that finished earlier in real time is causally before every later read"
     ],
     "correct": [
       1

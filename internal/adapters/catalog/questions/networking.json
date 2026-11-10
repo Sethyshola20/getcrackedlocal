@@ -214,16 +214,16 @@
       "UDP",
       "Transport"
     ],
-    "prompt": "Which properties does ordinary UDP provide by itself?",
-    "solution": "UDP preserves datagram boundaries at the socket interface but does not guarantee delivery, ordering, or duplicate suppression. Applications needing those properties must implement them or choose another transport. A checksum detects some corruption but is not cryptographic authentication.",
+    "prompt": "An application sends three datagrams over an ordinary UDP socket. In transit, datagram #1 is dropped by a congested router, #2 is duplicated by a retransmitting middlebox, and #3 arrives before a copy of #2. The receiver just loops on recvfrom. Which behaviors can it rely on the socket for?",
+    "solution": "Every datagram that arrives is handed up whole by exactly one recvfrom: loss, duplication, and reordering never merge or split messages, so preserved datagram boundaries are what the socket provides. Nothing retransmits the dropped #1, nothing reorders #3 relative to #2, and no duplicate of #2 is suppressed — delivery, ordering, and duplicate control are the application's job, or a reason to choose another transport. A checksum detects some corruption but is not cryptographic authentication.",
     "hints": [
-      "Separate message boundaries from reliability.",
-      "Consider losses and reordering."
+      "Trace each of the three fates through a plain recvfrom loop: what changes for the app, and what does not?",
+      "Ask which of the three fates the socket itself undoes — and which ones only the application could correct."
     ],
     "rubric": [
-      "Identify datagram boundaries.",
-      "Reject reliability and order guarantees.",
-      "Distinguish checksums from authentication."
+      "States that arriving datagrams are delivered whole, with boundaries intact.",
+      "Rejects retransmission, reordering, and duplicate suppression as UDP-provided behavior.",
+      "Assigns recovery of the lost datagram to the application, not the socket."
     ],
     "followUp": "What can happen if the receive buffer is smaller than one datagram?",
     "references": [
@@ -233,10 +233,10 @@
       }
     ],
     "options": [
-      "Preserved datagram boundaries",
-      "Guaranteed delivery",
-      "Guaranteed ordering",
-      "No built-in retransmission guarantee"
+      "Each datagram that arrives reaches the app whole, via exactly one recvfrom",
+      "The socket suppresses the duplicate of #2, so the app reads it exactly once",
+      "The socket reorders arrivals so the app reads #1, #2, #3 in send order",
+      "The lost #1 stays lost — nothing in UDP retransmits it"
     ],
     "correct": [
       0,
