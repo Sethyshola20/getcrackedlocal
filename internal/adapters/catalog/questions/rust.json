@@ -479,29 +479,36 @@
       "RefCell",
       "Interior mutability"
     ],
-    "prompt": "Select the true statements about RefCell<T> in single-threaded safe Rust.",
-    "solution": "RefCell permits mutation through a shared reference while checking borrow exclusivity at runtime. Conflicting borrow calls can panic; try_borrow_mut reports failure instead. RefCell alone is not a thread-safe replacement for a mutex.",
+    "prompt": "Assume stable, single-threaded Rust and step through the program below one statement at a time. Which statements correctly describe what happens? Select all that apply.",
+    "solution": "The program compiles: to the static borrow checker, borrow and borrow_mut both take a shared reference to log. Borrows of the stored value travel through UnsafeCell inside RefCell, which the checker deliberately does not track — that is what interior mutability means.\n\nThe exclusivity the checker cannot enforce statically is enforced at runtime: a RefCell keeps a borrow flag that records every outstanding shared borrow and any outstanding mutable borrow. peek is a Ref guard, so the shared borrow it represents lasts until the guard is dropped, at the end of main — not at its last use. When borrow_mut() runs, the flag still records one active shared borrow, so RefCell panics with a BorrowMutError and the push never executes. One outstanding shared borrow is enough; no second borrow_mut is needed for a conflict.\n\ntry_borrow_mut() performs the identical check but returns Err(BorrowMutError) instead of panicking, so the caller can log, retry, or refuse. NLL shortens compile-time borrow lifetimes to a reference's last use; it does not drop a runtime guard earlier and cannot clear this flag.",
     "hints": [
-      "The borrowing rules still apply.",
-      "Compare borrow_mut with try_borrow_mut."
+      "The moment that matters is the borrow_mut() call: what does the cell's borrow flag contain right then?",
+      "A Ref guard owns its borrow until it is dropped — compare the guard's drop scope with its last use."
     ],
     "rubric": [
-      "Identify runtime checks.",
-      "Recognize the fallible borrowing API.",
-      "Reject cross-thread synchronization claims."
+      "States that the program compiles because borrow and borrow_mut both take a shared reference to the cell.",
+      "Predicts the panic at the borrow_mut() call while peek's guard is still alive.",
+      "Explains that a runtime borrow flag enforces exclusivity, so one outstanding shared borrow already refuses borrow_mut.",
+      "States that try_borrow_mut reports the same conflict as an Err value instead of panicking."
     ],
-    "followUp": "When would Cell<T> avoid a guard-based borrow?",
+    "followUp": "Why does rustc accept overlapping borrows of log here, and which runtime structure enforces the exclusivity the static checker cannot see?",
     "references": [
       {
         "title": "Rust standard library · RefCell",
         "url": "https://doc.rust-lang.org/std/cell/struct.RefCell.html"
+      },
+      {
+        "title": "The Rust Book · RefCell and interior mutability",
+        "url": "https://doc.rust-lang.org/book/ch15-05-interior-mutability.html"
       }
     ],
+    "code": "use std::cell::RefCell;\n\nfn main() {\n    let log = RefCell::new(vec![String::from(\"init\")]);\n    let peek = log.borrow();\n    println!(\"first: {}\", peek[0]);\n    log.borrow_mut().push(String::from(\"done\"));\n}\n",
+    "language": "rust",
     "options": [
-      "It permits unlimited simultaneous mutable borrows",
-      "borrow_mut can panic on a conflict",
-      "try_borrow_mut can return an error",
-      "It automatically makes T Sync"
+      "It fails to compile: peek still borrows log when borrow_mut is called, and the borrow checker rejects overlapping borrows.",
+      "It compiles, then panics at the borrow_mut() call: peek's guard still holds a shared borrow that the runtime flag counts.",
+      "Replacing that call with try_borrow_mut() reports the same conflict as an Err value instead of panicking.",
+      "It runs to completion: NLL ends the borrow held by peek at its last use, before the mutable borrow is requested."
     ],
     "correct": [
       1,
