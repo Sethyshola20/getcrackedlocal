@@ -31,8 +31,8 @@
     "options": [
       "The branch predictor cannot distinguish x from y.",
       "False sharing causes repeated line ownership transfers.",
-      "The compiler must serialize every independent variable.",
-      "Both cores necessarily execute on the same logical CPU."
+      "Coherence tracks changes per source-level variable, so independently written variables cannot interfere.",
+      "Each write to x or y forces the entire cache hierarchy to be flushed to memory."
     ],
     "correct": [
       1

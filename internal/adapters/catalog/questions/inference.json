@@ -127,7 +127,9 @@
       "All inference latency must fall by exactly 4×.",
       "Kernel support and dequantization overhead can limit speedup.",
       "KV cache memory may be unchanged by weight-only quantization.",
-      "Accuracy must be evaluated rather than assumed unchanged."
+      "Accuracy must be evaluated rather than assumed unchanged.",
+      "Raw weight storage shrinking four-fold guarantees a lower time-to-first-token.",
+      "Lower perplexity on a fixed benchmark set is sufficient to certify unchanged production quality."
     ],
     "correct": [
       1,
@@ -566,7 +568,7 @@
     "solution": "576 bytes: weights use 1024×4/8=512 bytes, and 32 scales use 64 bytes. Real formats can add zero points, alignment, padding, and mixed-precision layers. Raw bit width alone therefore understates total model storage.",
     "hints": [
       "Count weight bytes and scale groups separately.",
-      "There are thirty-two groups."
+      "Where does the number of scales come from — divide which quantity by which?"
     ],
     "rubric": [
       "Compute 512 weight bytes.",

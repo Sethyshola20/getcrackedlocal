@@ -449,7 +449,7 @@
     "solution": "1500. The ACK identifies the next expected byte, so the payload spans sequence positions 1000 through 1499. SYN and FIN each consume sequence space, but the question explicitly excludes them.",
     "hints": [
       "An ACK names the next expected position.",
-      "The last payload byte is 1499."
+      "500 payload bytes consume 500 consecutive sequence positions — relative to that range, which boundary does the ACK name?"
     ],
     "rubric": [
       "Compute 1500.",
@@ -570,7 +570,7 @@
     "solution": "Validate the certificate chain against intended trust roots and check the requested hostname against certificate identities, including validity and applicable policy. Encryption without peer identity validation permits connection to an unintended party. Disabling verification to repair connectivity removes this assurance.",
     "hints": [
       "A certificate can be valid for another hostname.",
-      "Trust and intended identity are separate checks."
+      "Encryption protects the bytes in flight — what evidence would tell you the endpoint on the other side is the server you intended to call, and who attests that evidence?"
     ],
     "rubric": [
       "Validate trust and validity.",
@@ -702,7 +702,7 @@
     "solution": "HTTP/2 frames share one ordered TCP byte stream. A missing byte range blocks delivery of later TCP bytes, even when those bytes belong to independent HTTP/2 streams. Application multiplexing removes one layer of serialization but not TCP's transport-level ordering dependency.",
     "hints": [
       "Separate frame multiplexing from transport delivery.",
-      "TCP exposes only contiguous stream bytes."
+      "While a hole sits in the middle of the received byte sequence, what can TCP hand to the layers above it — and which streams do the bytes queued behind that gap belong to?"
     ],
     "rubric": [
       "Identify the shared TCP stream.",

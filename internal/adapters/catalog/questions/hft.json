@@ -467,8 +467,8 @@
     "prompt": "A local system frees all reserved exposure as soon as it sends a cancel. A fill then arrives before cancel acknowledgement. Explain the state error and repair it.",
     "solution": "A cancel request does not prove the order stopped being executable. Keep exposure reserved while cancellation is pending, incorporate fills, and release only the confirmed unexecuted remainder according to the venue protocol. Model requests and execution reports as distinct state transitions, including late and duplicate messages.",
     "hints": [
-      "The venue may match before processing cancellation.",
-      "Pending cancel is still an exposed state."
+      "What may the venue still do with an order it has received a cancel for but not yet acknowledged?",
+      "From cancel send to acknowledgement, which single event may still change your reserved exposure — and what justifies releasing any of it?"
     ],
     "rubric": [
       "Retain pending-cancel exposure.",
@@ -558,7 +558,7 @@
     "prompt": "Two threads independently see 70 units of reserved exposure under a 100-unit limit, then each admits an order for 20. Explain the race and an admission protocol.",
     "solution": "Both observe the same spare capacity, producing 110 units after admission. Serialize check-and-reserve or use a correct atomic conditional update. Include pending orders in the reservation, release only confirmed reductions, and make duplicate events idempotent. The system invariant is checked against total admitted exposure.",
     "hints": [
-      "The check and reservation form one logical operation.",
+      "Both threads computed spare capacity from the same 70-unit snapshot — what changed in the world between the first check and the second one?",
       "Pending orders already consume capacity."
     ],
     "rubric": [
@@ -689,7 +689,7 @@
     "solution": "Each percentile summarizes a separate distribution, and slow events need not coincide across stages. Correlation and per-request stage combinations determine the end-to-end tail. Measure total latency for the same requests and use aligned traces to explain it; summing selected percentiles is not a percentile calculation.",
     "hints": [
       "The slowest one percent may be different requests.",
-      "Preserve per-request correlation."
+      "To check whether one request's stage latencies ever add to 30µs, what must you record about that same request at each stage — and do the three reported p99s contain that linkage?"
     ],
     "rubric": [
       "Reject percentile addition.",
@@ -869,7 +869,7 @@
     "solution": "Use an authority or venue/session mechanism that prevents stale senders from submitting after takeover, and reconcile live orders and sequence state before admission. A heartbeat timeout alone cannot prove the old process stopped. Test pause, partition, and delayed-packet scenarios, and specify availability loss when exclusive authority cannot be established.",
     "hints": [
       "Failure detection is suspicion.",
-      "The old process can wake up after takeover."
+      "The killer moment is resume-after-takeover: which component is in a position to refuse the paused process's next submit, and how would you make that refusal hold even when the old process believes it is healthy?"
     ],
     "rubric": [
       "Enforce exclusive submission authority.",

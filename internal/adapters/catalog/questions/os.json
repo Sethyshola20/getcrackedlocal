@@ -19,7 +19,7 @@
     ],
     "hints": [
       "The kernel may delay allocating physical memory until it is touched.",
-      "A present shared read-only page can still fault on a write."
+      "For each option, ask twice: does taking this fault require fetching data from storage, or only changing a right on a page that is already resident?"
     ],
     "followUp": "Why can pre-touching a large arena improve tail latency but increase startup time and memory commitment?",
     "references": [
@@ -32,7 +32,9 @@
       "First access to a demand-zero anonymous page.",
       "A write that triggers copy-on-write.",
       "A file-backed page that must be fetched from storage.",
-      "Every ordinary TLB miss necessarily enters the kernel fault handler."
+      "Every ordinary TLB miss necessarily enters the kernel fault handler.",
+      "The address lay inside a valid mapping, so its page was already resident and writable.",
+      "Any fault on a valid access means the page was evicted to swap, so taking the fault always performs a disk read."
     ],
     "correct": [
       0,
@@ -808,7 +810,7 @@
     "solution": "Larger pages can reduce translation pressure and TLB misses. Allocation, collapse, or compaction work can introduce latency and fragmentation effects. Compare the relevant huge-page policies using request tails, fault and compaction events, residency, and memory footprint under representative pressure rather than assuming one policy is universally best.",
     "hints": [
       "Translation efficiency and allocation latency are different costs.",
-      "Observe compaction alongside request tails."
+      "When a p99 spike lands, what memory-management work is the kernel doing at that instant, and does it scale with how fast the heap is growing?"
     ],
     "rubric": [
       "Explain TLB benefit.",

@@ -33,7 +33,7 @@
       "Both guarantees always hold if replicas retry enough.",
       "Both guarantees always hold if each side elects a leader.",
       "The requirements cannot both be guaranteed during a partition.",
-      "A larger cache makes the register linearizable."
+      "Only writes are constrained by the partition; both sides keep serving linearizable reads without coordination."
     ],
     "correct": [
       2
@@ -90,7 +90,7 @@
     ],
     "hints": [
       "List a valid order of the four store operations.",
-      "A conditional write can reject a result computed from an obsolete version."
+      "Between each client's read and its write, what assumption can the other client invalidate — and would resending the same computed value repair that?"
     ],
     "followUp": "What extra identity is needed if a client retries an atomic increment after an ambiguous timeout?",
     "references": [
@@ -663,7 +663,7 @@
     "solution": "The protocol restricts direct majority-based commitment to entries from the leader's current term. Once such an entry commits, preceding entries become committed as part of the log prefix. This rule prevents unsafe conclusions from older entries that may have appeared on different majorities across terms.",
     "hints": [
       "Track the term of the entry, not just the leader.",
-      "Commitment of a prefix follows a current-term commitment."
+      "Imagine two different leaders, in two different terms, each seeing that old entry on a majority — what history could each conclude, and can a majority count alone tell those histories apart?"
     ],
     "rubric": [
       "State the current-term restriction.",

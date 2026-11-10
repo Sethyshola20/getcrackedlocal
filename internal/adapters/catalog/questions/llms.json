@@ -221,7 +221,7 @@
     "solution": "Training predicts the next token distribution from the preceding tokens, using known training prefixes. Generation repeatedly conditions on its own chosen output tokens. The model is not trained merely to return one stored continuation, and generation errors can alter later prefixes.",
     "hints": [
       "Compare known prefixes with generated prefixes.",
-      "The output before decoding is a distribution."
+      "Before any decoding step, does the model commit to one token, or does it hold a preference over every possible next token — and at which point does that become the single token you see?"
     ],
     "rubric": [
       "Define next-token prediction.",
@@ -872,8 +872,8 @@
     "prompt": "Design a test of whether a long-context model reliably uses evidence regardless of its position, without leaking the answer through the test prompt.",
     "solution": "Place equivalent answer-bearing evidence at varied positions among controlled distractors, vary context length, and hold question difficulty constant. Measure answer accuracy and supported citations, include unanswerable cases, and separate retrieval from reasoning failures. Randomize templates and preserve held-out cases to avoid tuning to one synthetic pattern.",
     "hints": [
-      "Vary position while holding content constant.",
-      "Include cases with no supporting answer."
+      "If position truly did not matter, what would you permute about the same evidence — and what must stay identical for that permutation to isolate position alone?",
+      "How would you expose a model that answers confidently even when the prompt contains nothing that supports an answer?"
     ],
     "rubric": [
       "Control evidence position and distractors.",

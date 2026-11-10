@@ -242,7 +242,7 @@
       "Yes; assignments always copy",
       "No; ownership moves to b",
       "Yes; the heap is reference counted",
-      "No; String cannot be assigned"
+      "Yes; the compiler copies small strings"
     ],
     "correct": [
       1
@@ -678,7 +678,7 @@
       "Immediately to completion",
       "On a newly created OS thread",
       "Only when polled",
-      "At the next garbage collection"
+      "When the future is dropped"
     ],
     "correct": [
       2

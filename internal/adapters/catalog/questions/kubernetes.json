@@ -241,7 +241,7 @@
     "solution": "Check that the Service selector matches Pod labels, that selected Pods are ready, and that targetPort resolves to the intended container port. Inspect EndpointSlices and readiness conditions. Running only describes a lifecycle phase; it does not establish selection, readiness, or successful application listening.",
     "hints": [
       "Discovery happens before packet forwarding.",
-      "Running is not the same as Ready."
+      "Running only says the container started — before packets can flow, which agreement between the Service and a Pod must hold, and which object records the Pods that currently satisfy it?"
     ],
     "rubric": [
       "Check labels and selectors.",
