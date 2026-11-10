@@ -551,7 +551,7 @@
     "prompt": "In PostgreSQL Read Committed, why can two SELECT statements in one transaction observe different committed values when another transaction commits between them?",
     "solution": "Each statement obtains a snapshot of committed data as of that statement's start, rather than one immutable transaction-wide snapshot. The later statement can therefore see newly committed changes. Use an appropriate stronger isolation level or explicit locking when the invariant requires it, accounting for the stronger mode's retry behavior.",
     "hints": [
-      "Snapshot scope is per statement here.",
+      "When exactly is the snapshot taken?",
       "Being in one transaction does not imply one snapshot at every level."
     ],
     "rubric": [
@@ -642,7 +642,7 @@
     "solution": "MVCC must retain versions still potentially visible to active snapshots. An old transaction can prevent cleanup from advancing, increasing table or index bloat and I/O. Inspect transaction age and snapshot holders, shorten transaction lifetimes, and monitor cleanup; more frequent vacuum alone cannot remove versions that remain required.",
     "hints": [
       "Visibility governs when versions become reclaimable.",
-      "An idle transaction can still hold a snapshot."
+      "Which versions can a still-active reader require?"
     ],
     "rubric": [
       "Explain version retention.",
@@ -672,7 +672,7 @@
     "solution": "Data can be written to a log, flushed to sorted files, and rewritten during compaction. Background merging consumes bandwidth and can change read amplification and space use. A short test may accumulate compaction debt that later stalls writes, so measure sustained load, pending work, and tail latency across steady-state cycles.",
     "hints": [
       "The first durable write is not the final physical write.",
-      "Background debt can grow during a short benchmark."
+      "What remains to be paid once the benchmark stops?"
     ],
     "rubric": [
       "Account for log, flush, and compaction.",

@@ -528,11 +528,11 @@
       "shared_ptr",
       "weak_ptr"
     ],
-    "prompt": "Two objects own shared_ptr references to each other. Their external owners disappear, but destructors never run. Explain the leak and how to choose a weak edge.",
+    "prompt": "Two objects own shared_ptr references to each other. Their external owners disappear, but destructors never run. Explain the leak and how to repair it.",
     "solution": "Each object's strong count remains positive because the other owns it. Break a non-owning back-reference with weak_ptr and lock it before use, handling expiry. Choose ownership from the domain relationship; replacing every edge with weak pointers would leave no owner keeping the graph alive.",
     "hints": [
       "Count strong owners after external release.",
-      "A back-reference may observe without owning."
+      "Which relationship can afford to observe without owning?"
     ],
     "rubric": [
       "Trace the reference cycle.",

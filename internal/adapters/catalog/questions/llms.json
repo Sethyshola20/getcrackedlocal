@@ -417,16 +417,16 @@
       "Evaluation",
       "Cross entropy"
     ],
-    "prompt": "A model's mean token negative log-likelihood is ln(4) using natural logarithms. What is its perplexity on the evaluated tokenization?",
+    "prompt": "A model's mean token negative log-likelihood is ln(4) using natural logarithms. A colleague quotes a second model at perplexity 6, computed with loss in bits on a different tokenization, and calls theirs better. What is your model's perplexity on the evaluated tokenization, and what must the two figures share before the comparison means anything?",
     "solution": "4, since perplexity is exp(mean negative log-likelihood). Comparisons require compatible tokenization, data, and masking; different token units can change the metric even when text-level behavior is similar. Lower perplexity alone does not establish better task accuracy or factuality.",
     "hints": [
       "Natural-log loss uses the exponential inverse.",
       "Keep tokenization fixed for comparison."
     ],
     "rubric": [
-      "Compute four.",
-      "State the exponential relationship.",
-      "Explain comparison and task limits."
+      "Compute exp(ln 4) = 4.",
+      "State the exponential identity perplexity = exp(mean loss).",
+      "Require matching tokenization and loss units before comparing the two figures."
     ],
     "followUp": "How would the formula differ for loss measured in bits?",
     "references": [

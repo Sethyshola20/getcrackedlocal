@@ -31,8 +31,8 @@
     "options": [
       "Fail liveness so the cache is rebuilt repeatedly.",
       "Fail readiness while recovery proceeds.",
-      "Delete the Deployment.",
-      "Mark the node NotReady from the application."
+      "Configure the startup probe as a permanent guard of Service traffic.",
+      "Expect a readiness failure to cut existing connections instantly."
     ],
     "correct": [
       1

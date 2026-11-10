@@ -284,7 +284,7 @@
       "IP",
       "CIDR"
     ],
-    "prompt": "How many IPv4 addresses are in a /26 block? Count every address, without subtracting network or broadcast conventions.",
+    "prompt": "A team must fit a pool of 60 instances on one subnet and a /26 is the candidate. How many IPv4 addresses are in a /26 block? Count every address, without subtracting network or broadcast conventions \u2014 the raw count is what the team checks against its pool.",
     "solution": "64 addresses: IPv4 has 32 bits, leaving 6 host bits, and 2^6=64. Usable-host conventions depend on subnet type and deployment; the question asks only for the address count.",
     "hints": [
       "Subtract prefix length from 32.",
@@ -318,7 +318,7 @@
     "prompt": "A service changes its DNS address after publishing a long TTL. Why may clients continue connecting to the old address, and why does lowering TTL at cutover not immediately fix cached entries?",
     "solution": "Resolvers may retain the old answer until its existing TTL expires; applications may also cache according to their own behavior. Lowering the authoritative TTL only affects newly fetched records. Plan overlap and reduce TTL sufficiently before migration, while measuring actual client resolution and connection reuse.",
     "hints": [
-      "Old caches know only the old TTL.",
+      "What lifetime is written in the record the resolver already holds, and who published it?",
       "Established connections may not resolve again."
     ],
     "rubric": [
